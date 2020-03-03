@@ -1,8 +1,8 @@
 /**
- * prenom1 nom1 mat1
- * prenom2 nom2 mat2
+ * Mathieu Perron 20076170
+ * Amine   Sami   2008635
  */
-
+ 
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
