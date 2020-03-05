@@ -494,6 +494,7 @@ error_code parse_first_line(char *line) {
 #define NET_CMD_TYPE 1
 #define SYS_CMD_COUNTS 3
 #define SYS_CMD_TYPE 2
+#define MISC_CMD_TYPE 3 // for commands not in special commands or in basic commands
 
 const char *FILE_SYSTEM_CMDS[FS_CMDS_COUNT] = {
         "ls",
@@ -525,13 +526,29 @@ const char *SYSTEM_CMDS[SYS_CMD_COUNTS] = {
 
 /**
  * Cette fonction prend en paramètre un nom de ressource et retourne
- * le numéro de la catégorie de ressource
+ * le numéro de la catégorie de ressource les ressources spéciales
+ * sont numérotées a partir de 4
  * @param res_name le nom
  * @param config la configuration du shell
  * @return le numéro de la catégorie (ou une erreur)
  */
 error_code resource_no(char *res_name) {
-    return NO_ERROR;
+    int i;
+    /* verify if in special commands */
+    for(i=0; i<((int)(conf->command_count)); i++)
+        if(!strcmp(res_name,conf->commands[i])) return i+4;
+    /* verify if in system, reseau or filesystem */
+    /* system */
+    for(i=0; i<SYS_CMD_COUNTS; i++)
+        if(!strcmp(res_name,SYSTEM_CMDS[i])) return SYS_CMD_TYPE;
+    /* reseau */
+    for(i=0; i<NETWORK_CMDS_COUNT; i++)
+        if(!strcmp(res_name,NETWORK_CMDS[i])) return NET_CMD_TYPE;
+    /* filesystem */
+    for(i=0; i<FS_CMDS_COUNT; i++)
+        if(!strcmp(res_name,FILE_SYSTEM_CMDS[i])) return FS_CMD_TYPE;
+    /* misc */
+    return MISC_CMD_TYPE;
 }
 
 /**
