@@ -174,7 +174,7 @@ char* readLine (void) {
  * @exception
  * @author mathieu2em, aminesami
  */
-char **tokenize(char *str, char *delim){
+char **tokenize(char *str, char *delim) {
     char **tokens, **saved, *next_tok;
     int i = 0, len = MIN_SIZE;
 
@@ -413,7 +413,14 @@ int execute (struct cmdline cmd_line) {
 }
 
 /**
- * Cette fonction analyse la première ligne et remplie la configuration
+ * Cette fonction analyse la première ligne et remplie la configuration.
+ *
+ * si une commande faisant partie des commandes de base est détectée dans
+ * les commandes speciales, elle est ajoutee aux commandes speciales
+ * mais n'est pas enlevée des commandes de base. le fonctionnement des
+ * fonction afférentes s'assurera de choisir son bon numero d'identification
+ * en priorisant la recherche parmis les commandes speciales
+ *
  * @param line la première ligne du shell
  * @param conf pointeur vers le pointeur de la configuration
  * @return un code d'erreur (ou rien si correct)
@@ -432,7 +439,7 @@ error_code parse_first_line(char *line) {
      */
     while(parsed_and[n++]);
     /* nbr of commands , do not erase */
-    if(n>4){
+    if(n>4) {
         /* set configuration commands */
         conf->commands = tokenize(parsed_and[0], " ,");
         /*
@@ -452,7 +459,7 @@ error_code parse_first_line(char *line) {
         /* init conf command caps */
         conf->command_caps = malloc(sizeof(int)*(n));
         /* use atoi to convert string to int */
-        for(i=0; i<n-1; i++){
+        for(i=0; i<n-1; i++) {
             conf->command_caps[i] = atoi(special_funcs_caps[i]);
         }
         /* the last segment is for null */
