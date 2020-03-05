@@ -453,7 +453,7 @@ error_code parse_first_line(char *line) {
 
     /* testing */
     printf("%d,%d,%d,%d\n", conf->file_system_cap, conf->network_cap, conf->system_cap, conf->any_cap);
-    printf("ressources count : %d", conf->ressources_count);
+    printf("ressources count : %d\n", conf->ressources_count);
 
     return NO_ERROR;
 }
