@@ -28,7 +28,7 @@ typedef enum {
 
 struct command_struct {
     char **call; // argv
-    int *ressources; //
+    int *ressources; 
     int call_size;
     int count;
     operator op; // type
@@ -80,7 +80,7 @@ typedef struct {
 
 int insert_char (char *, int, char, int);
 char *readLine (void);
-char **tokenize (char *, char *);
+char **tokenize (const char *, char *);
 error_code parse (char **, command_head *);
 int execute_cmd (command);
 int execute (command_head);
@@ -172,7 +172,7 @@ char* readLine (void) {
  * @exception
  * @author mathieu2em, aminesami
  */
-char **tokenize(char *str, char *delim) {
+char **tokenize(const char *str, char *delim) {
     char **tokens, **saved, *next_tok;
     int i = 0, len = MIN_SIZE;
 
@@ -578,7 +578,10 @@ error_code evaluate_whole_chain(command_head *head);
  * @return un code d'erreur
  */
 error_code create_command_chain(const char *line, command_head **result) {
+    char **tokens;
+    tokens = tokenize(line, " \t");
     /* allocate command chain head */
+    parse(tokens, *result);
 
     return NO_ERROR;
 }
@@ -722,8 +725,8 @@ void run_shell() {
     while (1) {
         line = readLine();
         if (line) {
-            tokens = tokenize(line, " \t\n");
-            cmd_ln = parse(tokens);
+            //tokens = tokenize(line, " \t");
+            //cmd_ln = parse(tokens);
             if (!cmd_ln.command) {
                 /* means lack of memory */
                 free(tokens);
