@@ -1,6 +1,6 @@
 /**
  * Mathieu Perron 20076170
- * Amine   Sami   2008635
+ * Amine   Sami   20086365
  */
 
 #include <stdio.h>
@@ -31,7 +31,7 @@ struct command_struct {
     int *ressources;
     int call_size;
     int count;
-    operator op; // in template was named p
+    operator op;
     //command *next; // from template
     char rnfn;
     int n;
@@ -42,7 +42,9 @@ struct cmdline {
     bool is_background;
 };
 
-// from new template , maybe this was for a linked list , we are using an array
+/*
+ * from new template
+ */
 struct command_chain_head_struct {
     int *max_resources;
     int max_resources_count;
@@ -51,7 +53,7 @@ struct command_chain_head_struct {
     bool background;
 };
 
-// Forward declaration
+/* Forward declaration */
 typedef struct banker_customer_struct banker_customer;
 
 struct banker_customer_struct {
@@ -70,14 +72,15 @@ typedef int error_code;
 
 typedef struct {
     char **commands; // name of commands with special values
-    int *command_caps;
+    int *command_caps; // available ressources for special commands
     unsigned int command_count; // number of commands with special values
     unsigned int ressources_count; // total number of ressources
     int file_system_cap;
     int network_cap;
     int system_cap;
     int any_cap;
-    //int no_banquers; from template but samuel said that its an artefact from ancient tp
+    // int no_banquers; from template but samuel said that its an artefact from ancient tp
+    // but l'enoncé dit de rien supprimer de ce qui est deja dans les struct
 } configuration;
 
 int insert_char (char *, int, char, int);
@@ -587,6 +590,9 @@ error_code evaluate_whole_chain(command_head *head);
  * @return un code d'erreur
  */
 error_code create_command_chain(const char *line, command_head **result) {
+    /* allocate command chain head */
+    command_head *head = malloc(sizeof(command_head));
+    /*  */
     return NO_ERROR;
 }
 
