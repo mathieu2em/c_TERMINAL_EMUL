@@ -561,12 +561,19 @@ error_code resource_no(char *res_name) {
 /**
  * Cette fonction prend en paramètre un numéro de ressource et retourne
  * la quantitée disponible de cette ressource
+ * file_sys=0, network=1, sys=2, misc=3, else.
+ * if do not exist then -1
  * @param resource_no le numéro de ressource
  * @param conf la configuration du shell
  * @return la quantité de la ressource disponible
  */
 int resource_count(int resource_no) {
-    return 0;
+    if(resource_no>3) return conf->command_caps[resource_no-3];
+    else if(resource_no==0) return conf->file_system_cap;
+    else if(resource_no==1) return conf->network_cap;
+    else if(resource_no==2) return conf->system_cap;
+    else if(resource_no==3) return conf->any_cap;
+    else return -1;
 }
 
 // Forward declaration
