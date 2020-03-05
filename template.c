@@ -27,11 +27,11 @@ typedef enum {
 } operator;
 
 struct command_struct {
-    char **argv;
+    char **call;
     int *ressources;
     int call_size;
     int count;
-    operator type; // in template was named p
+    operator op; // in template was named p
     //command *next; // from template
     char rnfn;
     int n;
@@ -69,19 +69,20 @@ typedef int error_code;
 #define CAST(type, src)((type)(src))
 
 typedef struct {
-    char **commands;
+    char **commands; // name of commands with special values
     int *command_caps;
-    unsigned int command_count;
-    unsigned int ressources_count;
+    unsigned int command_count; // number of commands with special values
+    unsigned int ressources_count; // total number of ressources
     int file_system_cap;
     int network_cap;
     int system_cap;
     int any_cap;
+    //int no_banquers; from template but samuel said that its an artefact from ancient tp
 } configuration;
 
 int insert_char (char *, int, char, int);
 char *readLine (void);
-char **tokenize (char *);
+char **tokenize (char *, char *);
 struct cmdline parse (char **);
 int execute_cmd (command);
 int execute (struct cmdline);
@@ -160,8 +161,7 @@ char* readLine (void) {
 }
 
 /* tokenize arguments */
-char **tokenize(char *str){
-    const char *delim = " \t\n";
+char **tokenize(char *str, char *delim){
     char **tokens, **saved, *next_tok;
     int i = 0, len = MIN_SIZE;
 
@@ -244,7 +244,7 @@ struct cmdline parse (char **tokens) {
     }
 
     for (i=0; i<n; i++) {
-        cmd_line.commands[i].type = NORMAL;
+        cmd_line.commands[i].op = NORMAL;
         cmd_line.commands[i].rnfn = '0';
         cmd_line.commands[i].n = 0;
     }
@@ -260,16 +260,16 @@ struct cmdline parse (char **tokens) {
             /* if the argument is a and get arguments before the &&
                and set type to AND */
             if (tokens[i][1])
-                cmd_line.commands[n].type = AND;
+                cmd_line.commands[n].op = AND;
             else
                 cmd_line.is_background = true;
-            cmd_line.commands[n++].argv = tokens + j;
+            cmd_line.commands[n++].call = tokens + j;
             j = i;
             tokens[j++] = NULL;
         } else if (tokens[i][0] == '|' && tokens[i][1]) {
             /* same for || */
-            cmd_line.commands[n].type = OR;
-            cmd_line.commands[n++].argv = tokens + j;
+            cmd_line.commands[n].op = OR;
+            cmd_line.commands[n++].call = tokens + j;
             j = i;
             tokens[j++] = NULL;
         } else if ((i == 0 || !tokens[i-1]) &&
@@ -294,10 +294,10 @@ struct cmdline parse (char **tokens) {
     /* when is background command `tokens + j' contains "&" otherwise it
        needs to be added to commands array */
     if (!cmd_line.is_background) {
-        cmd_line.commands[n++].argv = tokens + j;
+        cmd_line.commands[n++].call = tokens + j;
     }
 
-    cmd_line.commands[n].argv = NULL; /* to know where the array ends */
+    cmd_line.commands[n].call = NULL; /* to know where the array ends */
     return cmd_line;
 }
 
@@ -310,9 +310,9 @@ int execute_cmd (command cmd) {
         fprintf(stderr, "could not fork process\n");
         return -1;
     } else if (pid == 0) {
-        child_code = execvp(cmd.argv[0], cmd.argv);
+        child_code = execvp(cmd.call[0], cmd.call);
         /* execvp only returns on error */
-        fprintf(stderr, "bash: %s: command not found\n", cmd.argv[0]);
+        fprintf(stderr, "bash: %s: command not found\n", cmd.call[0]);
     } else {
         waitpid(pid, &child_code, 0);
         child_code = WEXITSTATUS(child_code);
@@ -341,7 +341,7 @@ int execute (struct cmdline cmd_line) {
         }
     }
 
-    for (i = 0; cmds[i].argv; i++) {
+    for (i = 0; cmds[i].call; i++) {
         if (cmds[i].rnfn == 'r' || cmds[i].rnfn == 'f') {
             for (n = 0; n < cmds[i].n; n++) {
                 ret = (cmds[i].rnfn == 'f') ? 0 : execute_cmd(cmds[i]);
@@ -360,20 +360,20 @@ int execute (struct cmdline cmd_line) {
 
         if (ret == 0) { /* here if success */
             /* OR should eval until one success */
-            if (cmds[i].type == OR) {
+            if (cmds[i].op == OR) {
                 /* skip until && */
-                while (cmds[i].argv && cmds[i].type != AND)
+                while (cmds[i].call && cmds[i].op != AND)
                     i++;
-                if (!cmds[i].argv)
+                if (!cmds[i].call)
                     break;
             }
         } else { /* here if failure */
             /* AND should eval until one failure */
-            if (cmds[i].type == AND) {
+            if (cmds[i].op == AND) {
                 /* skip until || */
-                while (cmds[i].argv && cmds[i].type != OR)
+                while (cmds[i].call && cmds[i].op != OR)
                     i++;
-                if (!cmds[i].argv)
+                if (!cmds[i].call)
                     break;
             }
         }
@@ -389,6 +389,72 @@ int execute (struct cmdline cmd_line) {
  * @return un code d'erreur (ou rien si correct)
  */
 error_code parse_first_line(char *line) {
+    char **parsed_and; /* to free */
+    conf = malloc(sizeof(configuration));
+    char **special_funcs_caps;
+    int n = 0;
+    int i = 0;
+
+    parsed_and = tokenize(line, "&");
+    /* verify if there is special commands capacities
+     * so we need to count how many elements are in
+     * parsed_and ; i.e. if > 4 yes else no
+     */
+    while(parsed_and[n++]);
+    /* nbr of commands , do not erase */
+    if(n>4){
+        /* set configuration commands */
+        conf->commands = tokenize(parsed_and[0], " ,");
+        /*
+         * set configuration commands capacities
+         * tokenize give a string array so we will have to
+         * convert it to an int array
+         */
+        n=0;
+        /* gets capacities */
+        special_funcs_caps = tokenize(parsed_and[1], " ,");
+        /* count commands */
+        while(special_funcs_caps[n++]);
+        /* set it in conf */
+        conf->command_count = n-1;
+        /* show values */
+        printf("command cound = %d\n", n-1);
+        /* init conf command caps */
+        conf->command_caps = malloc(sizeof(int)*(n));
+        /* use atoi to convert string to int */
+        for(i=0; i<n-1; i++){
+            conf->command_caps[i] = atoi(special_funcs_caps[i]);
+        }
+        /* the last segment is for null */
+        conf->command_caps[n-1] = '\0';
+        /* unused after that */
+        free(special_funcs_caps);
+        special_funcs_caps = NULL; // TODO not sure if necessary
+    }
+    /* testing */
+    i=0;
+    while(conf->command_caps[i]) printf("%d\n", conf->command_caps[i++]);
+
+    /* setting config values for different elems */
+    /* file_system capacity */
+    conf->file_system_cap = atoi(parsed_and[i++]);
+    /* network capacity */
+    conf->network_cap = atoi(parsed_and[i++]);
+    /* system capacity */
+    conf->system_cap = atoi(parsed_and[i++]);
+    /* any capacity */
+    conf->any_cap = atoi(parsed_and[i]);
+
+    /* count ressources for ressources_count value of config */
+    i=0;n=0;
+    while(conf->command_caps[i]) n+=conf->command_caps[i++];
+    n += (conf->file_system_cap + conf->network_cap + conf->system_cap + conf->any_cap);
+    conf->ressources_count = n;
+
+    /* testing */
+    printf("%d,%d,%d,%d\n", conf->file_system_cap, conf->network_cap, conf->system_cap, conf->any_cap);
+    printf("ressources count : %d", conf->ressources_count);
+
     return NO_ERROR;
 }
 
@@ -571,6 +637,14 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
  */
 error_code init_shell() {
     error_code err = NO_ERROR;
+    char *line;
+
+    /* extract first line */
+    line = readLine();
+
+    /* send it to first line analyser */
+    err = parse_first_line(line);
+
     return err;
 }
 
@@ -594,7 +668,7 @@ void run_shell() {
     while (1) {
         line = readLine();
         if (line) {
-            tokens = tokenize(line);
+            tokens = tokenize(line, " \t\n");
             cmd_ln = parse(tokens);
             if (!cmd_ln.commands) {
                 /* means lack of memory */
