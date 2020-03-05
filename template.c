@@ -23,23 +23,18 @@ typedef struct command_struct command;
 typedef struct command_chain_head_struct command_head;
 
 typedef enum {
-    BIDON, NONE, OR, AND, ALSO, NORMAL
+    BIDON, NONE, OR, AND, ALSO
 } operator;
 
 struct command_struct {
-    char **call;
-    int *ressources;
+    char **call; // argv
+    int *ressources; //
     int call_size;
     int count;
-    operator op;
-    //command *next; // from template
+    operator op; // type
+    command *next; // from template
     char rnfn;
     int n;
-};
-
-struct cmdline {
-    command *commands;
-    bool is_background;
 };
 
 /*
@@ -86,15 +81,15 @@ typedef struct {
 int insert_char (char *, int, char, int);
 char *readLine (void);
 char **tokenize (char *, char *);
-struct cmdline parse (char **);
+error_code parse (char **, command_head *);
 int execute_cmd (command);
-int execute (struct cmdline);
+int execute (command_head);
 
 const char* syntax_error_fmt = "bash: syntax error near unexpected token `%s'\n";
 
-// ---------------------------------------------------------------------------------------------------------------------
-// ---------------------------------------------------------------------------------------------------------------------
-// ---------------------------------------------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 // Configuration globale
 configuration *conf = NULL;
@@ -212,6 +207,27 @@ char **tokenize(char *str, char *delim) {
 }
 
 /**
+ * Adds a node and initialize default values
+ * @param
+ * @return
+ * @exception
+ * @author mathieu2em, aminesami
+ */
+error_code init_next(command *parent) {
+    command *kid = malloc(sizeof(command));
+    if(!kid){
+        fprintf(stderr, "jai fourrer ta mere\n");
+        return -1;
+    }
+    parent->next = kid;
+    kid->op = NONE;
+    kid->rnfn = '0';
+    kid->n = 0;
+    kid->next = NULL;
+    return 0;
+}
+
+/**
  * creates the cmdline structure that containes every commands with their
  * types and other particularities
  * @param tokens an array of string
@@ -219,79 +235,50 @@ char **tokenize(char *str, char *delim) {
  * @exception
  * @author mathieu2em, aminesami
  */
-struct cmdline parse (char **tokens) {
-    int i, j, k, n = 1;
+error_code parse (char **tokens, command_head *cmd_head) {
+    int i, j, k = 1;
     char *cp;
-    struct cmdline cmd_line;
-    cmd_line.is_background = false;
+    cmd_head->background = false;
+    command *cmd;
 
-    /* count commands */
-    for (i = 0; tokens[i]; i++) {
-        if (tokens[i][0] == '&') {
-            if (!tokens[i][1]) {
-                if (tokens[i+1]) {
-                    fprintf(stderr, syntax_error_fmt, tokens[i+1]);
-                    cmd_line.commands = NULL;
-                    return cmd_line;
-                }
-            } else if (tokens[i][1] == '&' && !tokens[i][2]) {
-                n++;
-            } else {
-                /*
-                 *  && is the only accepted elem starting with &
-                 *  if we aren't at the end
-                 */
-                fprintf(stderr, syntax_error_fmt, tokens[i]);
-                cmd_line.commands = NULL;
-                return cmd_line;
-            }
-        } else if (tokens[i][0] == '|') {
-            if (tokens[i][1] == '|' && !tokens[i][2]) {
-                n++;
-            } else {
-                /* || is the only accepted elem starting with | */
-                fprintf(stderr, syntax_error_fmt, tokens[i]);
-                cmd_line.commands = NULL;
-                return cmd_line;
-            }
-        }
-    }
-
-    /* now allocate our array of commands */
-    cmd_line.commands = malloc(sizeof(command) * (n + 1));
-    if (!cmd_line.commands) {
+    /* now allocate our first command */
+    cmd_head->command = malloc(sizeof(command));
+    cmd = cmd_head->command;
+    if (!cmd) {
         fprintf(stderr, "lack of memory");
-        cmd_line.commands = NULL;
-        return cmd_line;
+        cmd_head->command = NULL;
+        return -1;
     }
-
-    for (i=0; i<n; i++) {
-        cmd_line.commands[i].op = NORMAL;
-        cmd_line.commands[i].rnfn = '0';
-        cmd_line.commands[i].n = 0;
-    }
+    cmd->op = NONE;
+    cmd->rnfn = '0';
+    cmd->n = 0;
+    cmd->next = NULL;
 
     /* now create the right structures for commands */
-    for (i = j = n = 0; tokens[i]; i++) {
+    for (i = j = 0; tokens[i]; i++) {
         /* removes parenthesis if rn or fn */
-        if ((cmd_line.commands[n].rnfn == 'f' ||
-             cmd_line.commands[n].rnfn == 'r') &&
+        if ((cmd->rnfn == 'f' ||
+             cmd->rnfn == 'r') &&
             (cp = strchr(tokens[i], ')'))) {
             *cp = '\0';
         } else if (tokens[i][0] == '&') {
             /* if the argument is a and get arguments before the &&
                and set type to AND */
             if (tokens[i][1])
-                cmd_line.commands[n].op = AND;
+                cmd->op = AND;
             else
-                cmd_line.is_background = true;
-            cmd_line.commands[n++].call = tokens + j;
+                cmd_head->background = true;
+            init_next(cmd);
+            cmd = cmd->next;
+            cmd->call = tokens + j;
             j = i;
             tokens[j++] = NULL;
         } else if (tokens[i][0] == '|' && tokens[i][1]) {
             /* same for || */
-            cmd_line.commands[n].op = OR;
-            cmd_line.commands[n++].call = tokens + j;
+            cmd->op = OR;
+            init_next(cmd);
+            cmd = cmd->next;
+            cmd->call = tokens + j;
             j = i;
             tokens[j++] = NULL;
         } else if ((i == 0 || !tokens[i-1]) &&
@@ -300,9 +287,9 @@ struct cmdline parse (char **tokens) {
             while(tokens[i][k] && isdigit(tokens[i][k]))
                 k++;
             if(isdigit(tokens[i][k-1]) && tokens[i][k] == '(') {
-                cmd_line.commands[n].rnfn = tokens[i][0];
+                cmd->rnfn = tokens[i][0];
                 tokens[i][k] = '\0';
-                cmd_line.commands[n].n = atoi(tokens[i] + 1);
+                cmd->n = atoi(tokens[i] + 1);
                 if (!tokens[i][k+1]) {
                     tokens[i++] = NULL;
                 } else {
@@ -315,12 +302,14 @@ struct cmdline parse (char **tokens) {
 
     /* when is background command `tokens + j' contains "&" otherwise it
        needs to be added to commands array */
-    if (!cmd_line.is_background) {
-        cmd_line.commands[n++].call = tokens + j;
+    if (!cmd_head->background) {
+        cmd->call = tokens + j;
+        init_next(cmd);
+        cmd = cmd->next;
     }
 
-    cmd_line.commands[n].call = NULL; /* to know where the array ends */
-    return cmd_line;
+    cmd->call = NULL; /* to know where the array ends */
+    return 0;
 }
 
 /**
@@ -358,12 +347,12 @@ int execute_cmd (command cmd) {
  * @exception
  * @author mathieu2em, aminesami
  */
-int execute (struct cmdline cmd_line) {
+int execute (command_head cmd_head) {
     int i, n, ret;
     pid_t pid;
-    command *cmds = cmd_line.commands;
+    command *cmds = cmd_head.command;
 
-    if (cmd_line.is_background) {
+    if (cmd_head.background) {
         pid = fork();
         if (pid < 0) {
             /* si le fork a fail */
@@ -584,15 +573,13 @@ error_code evaluate_whole_chain(command_head *head);
 
 /**
  * Créer une chaîne de commande qui correspond à une ligne de commandes
- * @param config la configuration
  * @param line la ligne de texte à parser
  * @param result le résultat de la chaîne de commande
  * @return un code d'erreur
  */
 error_code create_command_chain(const char *line, command_head **result) {
     /* allocate command chain head */
-    command_head *head = malloc(sizeof(command_head));
-    /*  */
+
     return NO_ERROR;
 }
 
@@ -730,14 +717,14 @@ void close_shell() {
 void run_shell() {
     int ret;
     char *line, **tokens;
-    struct cmdline cmd_ln;
+    command_head cmd_ln;
 
     while (1) {
         line = readLine();
         if (line) {
             tokens = tokenize(line, " \t\n");
             cmd_ln = parse(tokens);
-            if (!cmd_ln.commands) {
+            if (!cmd_ln.command) {
                 /* means lack of memory */
                 free(tokens);
                 free(line);
@@ -745,7 +732,7 @@ void run_shell() {
             } else {
                 ret = execute(cmd_ln);
 
-                free(cmd_ln.commands);
+                free(cmd_ln.command);
                 free(tokens);
                 free(line);
 
