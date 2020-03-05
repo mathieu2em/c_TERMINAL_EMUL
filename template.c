@@ -112,7 +112,13 @@ int insert_char (char *str, int pos, char c, int len)
     return len;
 }
 
-/* readline allocate a new char array */
+
+/**
+ * readline allocate a new char array
+ * @return a string
+ * @exception
+ * @author mathieu2em, aminesami
+ */
 char* readLine (void) {
     char *line;
     int c, p, n = 0, len = MIN_SIZE;
@@ -160,7 +166,14 @@ char* readLine (void) {
     return line;
 }
 
-/* tokenize arguments */
+/**
+ * tokenize arguments
+ * @param str : string containing the line written
+ * @param delim : the delimiters of the line
+ * @return a string array
+ * @exception
+ * @author mathieu2em, aminesami
+ */
 char **tokenize(char *str, char *delim){
     char **tokens, **saved, *next_tok;
     int i = 0, len = MIN_SIZE;
@@ -195,8 +208,14 @@ char **tokenize(char *str, char *delim){
     return tokens;
 }
 
-/* creates the cmdline structure that containes every commands with their
-   types and other particularities */
+/**
+ * creates the cmdline structure that containes every commands with their
+ * types and other particularities
+ * @param tokens an array of string
+ * @return return the command_line structure containing commands
+ * @exception
+ * @author mathieu2em, aminesami
+ */
 struct cmdline parse (char **tokens) {
     int i, j, k, n = 1;
     char *cp;
@@ -301,6 +320,13 @@ struct cmdline parse (char **tokens) {
     return cmd_line;
 }
 
+/**
+ * does the fork and execute the command
+ * @param a single command structure
+ * @return the resulting value returned by exec process
+ * @exception
+ * @author mathieu2em, aminesami
+ */
 int execute_cmd (command cmd) {
     int child_code = 0;
     pid_t pid;
@@ -322,9 +348,13 @@ int execute_cmd (command cmd) {
     return child_code;
 }
 
-/*
-  execute & fork process
-*/
+/**
+ * execute & fork process
+ * @param command_line the whole parsed command line structure
+ * @return an integer representing the value of return code of exec fork
+ * @exception
+ * @author mathieu2em, aminesami
+ */
 int execute (struct cmdline cmd_line) {
     int i, n, ret;
     pid_t pid;
