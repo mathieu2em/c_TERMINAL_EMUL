@@ -27,14 +27,12 @@ typedef enum {
 } operator;
 
 struct command_struct {
-    char **call; // argv
+    char **call;
     int *ressources; 
-    int call_size;
+    int call_size; // feels useless...
     int count;
-    operator op; // type
-    command *next; // from template
-    char rnfn;
-    int n;
+    operator op;
+    command *next;
 };
 
 /*
@@ -74,9 +72,17 @@ typedef struct {
     int network_cap;
     int system_cap;
     int any_cap;
-    // int no_banquers; from template but samuel said that its an artefact from ancient tp
-    // but l'enoncé dit de rien supprimer de ce qui est deja dans les struct
+    int no_banquers; 
 } configuration;
+
+/* this is a prototype residual pointer struct to free lines and tokens at exit */
+typedef struct residual_ptrs_struct residual_ptrs;
+struct residual_ptrs_struct {
+    char *line;
+    char **tokens;
+    residual_ptrs *next;
+};
+    
 
 int insert_char (char *, int, char, int);
 char *readLine (void);
@@ -84,6 +90,9 @@ char **tokenize (const char *, char *);
 error_code parse (char **, command_head *);
 int execute_cmd (command);
 int execute (command_head);
+command *make_command_node (char **, operator, int, command *);
+void free_command_list (command *);
+void free_residual_ptr (residual_ptrs *);
 
 const char* syntax_error_fmt = "bash: syntax error near unexpected token `%s'\n";
 
@@ -111,10 +120,45 @@ int insert_char (char *str, int pos, char c, int len)
 }
 
 
+command *make_command_node (char **call, operator op, int count, command *next) {
+    command *node = malloc(sizeof(command));
+    if (!node) {
+        fprintf(stderr, "command node could not be allocated\n");
+        return NULL;
+    }
+    node->call = call;
+    node->op = op;
+    node->count = count;
+    node->next = next;
+    return node;
+}
+
+void free_command_list (command *cmd) {
+    command *next;
+    while (cmd) {
+        next = cmd->next;
+        /* no need to free call because no allocation was made */
+        free(cmd->ressources);
+        free(cmd);
+        cmd = next;
+    }
+}
+
+void free_residual_ptr (residual_ptrs *res) {
+    residual_ptrs *next;
+    while (res) {
+        next = res->next;
+        free(res->line);
+        free(res->tokens);
+        free(res);
+        res = next;
+    }
+}
+
 /**
  * readline allocate a new char array
  * @return a string
- * @exception
+ * @exception out of memory
  * @author mathieu2em, aminesami
  */
 char* readLine (void) {
@@ -166,10 +210,10 @@ char* readLine (void) {
 
 /**
  * tokenize arguments
- * @param str : string containing the line written
- * @param delim : the delimiters of the line
- * @return a string array
- * @exception
+ * @param str : string to tokenize
+ * @param delim : the delimiters of the tokens
+ * @return string array
+ * @exception out of memory
  * @author mathieu2em, aminesami
  */
 char **tokenize(const char *str, char *delim) {
@@ -212,10 +256,10 @@ char **tokenize(const char *str, char *delim) {
  * @return
  * @exception
  * @author mathieu2em, aminesami
- */
+ *
 error_code init_next(command *parent) {
     command *kid = malloc(sizeof(command));
-    if(!kid){
+    if (!kid) {
         fprintf(stderr, "jai fourrer ta mere\n");
         return -1;
     }
@@ -238,78 +282,83 @@ error_code init_next(command *parent) {
 error_code parse (char **tokens, command_head *cmd_head) {
     int i, j, k = 1;
     char *cp;
+    operator op;
+    int count;
+    command *current, *cmd;
+    bool rnfn;
+
     cmd_head->background = false;
-    command *cmd;
-
-    /* now allocate our first command */
-    cmd_head->command = malloc(sizeof(command));
-    cmd = cmd_head->command;
-    if (!cmd) {
-        fprintf(stderr, "lack of memory");
-        cmd_head->command = NULL;
-        return -1;
-    }
-    cmd->op = NONE;
-    cmd->rnfn = '0';
-    cmd->n = 0;
-    cmd->next = NULL;
-
+    // TODO : check for child node allocation and free everything if fails
     /* now create the right structures for commands */
     for (i = j = 0; tokens[i]; i++) {
+        op = BIDON;
         /* removes parenthesis if rn or fn */
-        if ((cmd->rnfn == 'f' ||
-             cmd->rnfn == 'r') &&
-            (cp = strchr(tokens[i], ')'))) {
+        if (rnfn && (cp = strchr(tokens[i], ')'))) {
             *cp = '\0';
-        } else if (tokens[i][0] == '&') {
+            rnfn = false;
+        }
+        if (tokens[i][0] == '&') {
             /* if the argument is a and get arguments before the &&
                and set type to AND */
-            if (tokens[i][1])
-                cmd->op = AND;
-            else
-                cmd_head->background = true;
-            init_next(cmd);
-            cmd = cmd->next;
-            cmd->call = tokens + j;
-            j = i;
-            tokens[j++] = NULL;
-        } else if (tokens[i][0] == '|' && tokens[i][1]) {
-            /* same for || */
-            cmd->op = OR;
-            init_next(cmd);
-            cmd = cmd->next;
-            cmd->call = tokens + j;
-            j = i;
-            tokens[j++] = NULL;
+            if (!tokens[i][1])
+                op = ALSO;
+            else if (tokens[i][1] == '&')
+                op = AND;
+            else {
+                fprintf(stderr, syntax_error_fmt, tokens[i]);
+                goto parse_error;
+            }
+        } else if (tokens[i][0] == '|') {
+            if (tokens[i][1] == '|')
+                op = OR;
+            else {
+                fprintf(stderr, syntax_error_fmt, tokens[i]);
+                goto parse_error;
+            }
         } else if ((i == 0 || !tokens[i-1]) &&
+                   /* i think testing previous token nullity is now obsolete */
                    (tokens[i][0]=='r' || tokens[i][0]=='f')) {
             k = 1;
             while(tokens[i][k] && isdigit(tokens[i][k]))
                 k++;
             if(isdigit(tokens[i][k-1]) && tokens[i][k] == '(') {
-                cmd->rnfn = tokens[i][0];
+                rnfn = true;
                 tokens[i][k] = '\0';
-                cmd->n = atoi(tokens[i] + 1);
-                if (!tokens[i][k+1]) {
-                    tokens[i++] = NULL;
-                } else {
+                count = (tokens[i][0] == 'r' ? 1 : -1) * atoi(tokens[i] + 1);
+                
+                if (!tokens[i][k+1])
+                    j++;
+                else
                     tokens[i] += k + 1;
-                }
-                j = i;
+                /* j = i;*/
+            } else {
+                fprintf(stderr, syntax_error_fmt, tokens[i]);
+                goto parse_error;
             }
+        } else if (op != ALSO && !tokens[i+1]) {
+            op = NONE;
+        }
+
+        if (op != BIDON) {
+            if (op != NONE)
+                tokens[i] = NULL;
+            cmd = make_command_node(tokens + j, op, count, NULL);
+            if (!cmd)
+                goto parse_error;
+            j = i + 1;
+            count = 1;
+            if (!cmd_head->command)
+                cmd_head->command = current = cmd;
+            else
+                current = current->next = cmd;
         }
     }
 
-    /* when is background command `tokens + j' contains "&" otherwise it
-       needs to be added to commands array */
-    if (!cmd_head->background) {
-        cmd->call = tokens + j;
-        init_next(cmd);
-        cmd = cmd->next;
-    }
-
-    cmd->call = NULL; /* to know where the array ends */
     return 0;
+
+ parse_error:
+    free_command_list(cmd_head->command);
+    return -1;
 }
 
 /**
@@ -340,6 +389,9 @@ int execute_cmd (command cmd) {
     return child_code;
 }
 
+/*****************************************
+ * WARNING execute DOES NOT WORK FOR NOW *
+ *****************************************/
 /**
  * execute & fork process
  * @param command_line the whole parsed command line structure
@@ -364,10 +416,11 @@ int execute (command_head cmd_head) {
     }
 
     for (i = 0; cmds[i].call; i++) {
+    /*
         if (cmds[i].rnfn == 'r' || cmds[i].rnfn == 'f') {
             for (n = 0; n < cmds[i].n; n++) {
                 ret = (cmds[i].rnfn == 'f') ? 0 : execute_cmd(cmds[i]);
-                /* ret is only negative inside child_process which failed */
+                /* ret is only negative inside child_process which failed 
                 if (ret < 0)
                     return -1;
             }
@@ -375,10 +428,10 @@ int execute (command_head cmd_head) {
             ret = execute_cmd(cmds[i]);
             if (ret < 0) {
                 /* here if error in execvp or fork */
-                /* exit after, we are inside child process or fork failed */
+                /* exit after, we are inside child process or fork failed 
                 return -1;
             }
-        }
+        }*/
 
         if (ret == 0) { /* here if success */
             /* OR should eval until one success */
@@ -419,17 +472,18 @@ int execute (command_head cmd_head) {
  */
 error_code parse_first_line(char *line) {
     char **parsed_and; /* to free */
-    conf = malloc(sizeof(configuration));
     char **special_funcs_caps;
     int n = 0;
     int i = 0;
 
+    conf = malloc(sizeof(configuration));
     parsed_and = tokenize(line, "&");
     /* verify if there is special commands capacities
      * so we need to count how many elements are in
      * parsed_and ; i.e. if > 4 yes else no
      */
-    while(parsed_and[n++]);
+    while(parsed_and[n++])
+        ;
     /* nbr of commands , do not erase */
     if(n>4) {
         /* set configuration commands */
@@ -443,7 +497,8 @@ error_code parse_first_line(char *line) {
         /* gets capacities */
         special_funcs_caps = tokenize(parsed_and[1], " ,");
         /* count commands */
-        while(special_funcs_caps[n++]);
+        while (special_funcs_caps[n++])
+            ;
         /* set it in conf */
         conf->command_count = n-1;
         /* show values */
@@ -579,10 +634,20 @@ error_code evaluate_whole_chain(command_head *head);
  */
 error_code create_command_chain(const char *line, command_head **result) {
     char **tokens;
+    command_head *cmd_head;
     tokens = tokenize(line, " \t");
-    /* allocate command chain head */
-    parse(tokens, *result);
+    /* initialize command chain head */
+    cmd_head = malloc(sizeof(command_head));
+    if (!cmd_head) {
+        fprintf(stderr, "could not allocate command chain header\n");
+        return -1;
+    }
+    if (HAS_ERROR(parse(tokens, cmd_head))) {
+        free(cmd_head);
+        return -1;
+    }
 
+    *result = cmd_head; /* insert command chain at pointed location */
     return NO_ERROR;
 }
 
@@ -593,6 +658,13 @@ error_code create_command_chain(const char *line, command_head **result) {
  * @return un code d'erreur
  */
 error_code count_ressources(command_head *head, command *command_block) {
+    command *current = command_block;
+
+    while (current) {
+        /* using part 1 functions we can count ressources */
+        current = current->next;
+    }
+    
     return NO_ERROR;
 }
 
@@ -711,8 +783,13 @@ error_code init_shell() {
  * et de votre programme.
  */
 void close_shell() {
+    // WE SHOULD ONLY FREE ALLOCATED LINES & TOKENS ARRAY HERE
 }
 
+
+/*****************************************
+ * WARNING run_shell DOES NOT WORK FOR NOW *
+ *****************************************/
 /**
  * Utilisez cette fonction pour y placer la boucle d'exécution (REPL)
  * de votre shell. Vous devez aussi y créer le thread banquier
@@ -747,11 +824,66 @@ void run_shell() {
     }
 }
 
+
+/****************************************************
+ * WARNING THIS VERSION OF main IS FOR TESTING ONLY *
+ ****************************************************/
+int main (void)
+{
+    char *line, **tokens, **t;
+    command *c;
+    command_head *cmd_head;
+    residual_ptrs *residuals;
+
+    residuals = malloc(sizeof(residual_ptrs));
+    if (!residuals)
+        return 1;
+    
+    line = readLine();
+    tokens = tokenize(line, " ");
+    residuals->line = line;
+    cmd_head = malloc(sizeof(command_head));
+    
+    if (!cmd_head) {
+        free(residuals);
+        free(line);
+        free(tokens);
+        return 1;
+    }
+    
+    if(HAS_ERROR(parse(tokens, cmd_head))) {
+        free(residuals);
+        free(line);
+        free(tokens);
+        free(cmd_head);
+        return 1;
+    }
+
+    residuals->tokens = tokens;
+    puts("op values -- BIDON: 0, NONE: 1, OR: 2, AND: 3, ALSO: 4");
+    c = cmd_head->command;
+    while (c) {
+        t = c->call;
+        printf("op=%d, count=%d: ", c->op, c->count);
+        while (*t) {
+            printf("%s ", *t);
+            t++;
+        }
+        puts("");
+        c = c->next;
+    }
+
+    free_command_list(cmd_head->command);
+    free(cmd_head);
+    free_residual_ptr(residuals);
+    return 0;
+}
+
 /**
  * Vous ne devez pas modifier le main!
  * Il contient la structure que vous devez utiliser. Lors des tests,
  * le main sera complètement enlevé!
- */
+ *
 int main(void) {
     if (HAS_NO_ERROR(init_shell())) {
         run_shell();
@@ -760,3 +892,4 @@ int main(void) {
         printf("Error while executing the shell.");
     }
 }
+*/
