@@ -457,6 +457,9 @@ error_code execute (command *cmd) {
     }
 }
 
+/***********************************************
+ * FIX ME : STOP USING TOKENIZE AND USE STRTOK *
+ ***********************************************/
 /**
  * Cette fonction analyse la première ligne et remplie la configuration.
  *
@@ -656,7 +659,7 @@ error_code create_command_chain(const char *line, command_head **result) {
     char **tokens;
     command_head *cmd_head;
 
-    /* duplicate line to save const qualifier */
+    // duplicate line to save const qualifier
     l = strdup(line);
     if (!l) {
         fprintf(stderr, "could not duplicate line\n");
@@ -664,24 +667,30 @@ error_code create_command_chain(const char *line, command_head **result) {
     }
     
     tokens = tokenize(l, " \t");
-    /* initialize command chain head */
+    // initialize command chain head
     cmd_head = malloc(sizeof(command_head));
     if (!cmd_head) {
         fprintf(stderr, "could not allocate command chain header\n");
+        free(tokens);
         free(l);
         return -1;
     }
+    
     if (HAS_ERROR(parse(tokens, cmd_head))) {
         free(cmd_head);
+        free(tokens);
         free(l);
         return -1;
     }
 
-    /* at this point the duplicated string l is no longer needed */
+    // at this point the duplicated string l is no longer needed
+    free(tokens);
     free(l);
-
-    *result = cmd_head; /* insert command chain at pointed location */
-    return NO_ERROR;
+    
+    // maybe merge assignment with return statement
+    // but for now keep seperate for clarity
+    *result = cmd_head;
+    return evaluate_whole_chain(cmd_head);
 }
 
 /**
@@ -691,13 +700,6 @@ error_code create_command_chain(const char *line, command_head **result) {
  * @return un code d'erreur
  */
 error_code count_ressources(command_head *head, command *command_block) {
-    command *current = command_block;
-
-    while (current) {
-        /* using part 1 functions we can count ressources */
-        current = current->next;
-    }
-    
     return NO_ERROR;
 }
 
@@ -707,6 +709,20 @@ error_code count_ressources(command_head *head, command *command_block) {
  * @return un code d'erreur
  */
 error_code evaluate_whole_chain(command_head *head) {
+    command *current = head->command;
+
+    while (current) {
+        if (HAS_ERROR(count_ressources(head, current))) {
+            fprintf(stderr, "error occured while counting resources\n");
+            free_command_chain(head->command);
+            return -1;
+        }
+
+        // here we must compute maximum concurent resources before iterating
+        
+        current = current->next;
+    }
+    
     return NO_ERROR;
 }
 
