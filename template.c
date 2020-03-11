@@ -75,24 +75,17 @@ typedef struct {
     int no_banquers; 
 } configuration;
 
-/* this is a prototype residual pointer struct to free lines and tokens at exit */
-typedef struct residual_ptrs_struct residual_ptrs;
-struct residual_ptrs_struct {
-    char *line;
-    char **tokens;
-    residual_ptrs *next;
-};
-    
-
 int insert_char (char *, int, char, int);
 char *readLine (void);
-char **tokenize (const char *, char *);
+char **tokenize (char *, char *);
 error_code parse (char **, command_head *);
-int execute_cmd (command);
-int execute (command_head);
+int execute_cmd (command*);
+error_code execute (command *);
 command *make_command_node (char **, operator, int, command *);
 void free_command_list (command *);
-void free_residual_ptr (residual_ptrs *);
+
+void close_shell (void);
+void run_shell (void);
 
 const char* syntax_error_fmt = "bash: syntax error near unexpected token `%s'\n";
 
@@ -121,12 +114,40 @@ int insert_char (char *str, int pos, char c, int len)
 
 
 command *make_command_node (char **call, operator op, int count, command *next) {
+    char **c = NULL, **saved;
+    int i;
     command *node = malloc(sizeof(command));
     if (!node) {
         fprintf(stderr, "command node could not be allocated\n");
         return NULL;
     }
-    node->call = call;
+
+    /* compute call_size and allocate according array in node */
+    for (i = 0; call[i]; i++)
+        ;
+    node->call = malloc(sizeof(char*) * (i+1));
+    if (!node->call) {
+        fprintf(stderr, "call array could not be allocated\n");
+        free(node);
+        return NULL;
+    }
+    node->call_size = i;
+
+    /* copy call into node */
+    for (i = 0; call[i]; i++) {
+        node->call[i] = malloc(sizeof(char) * (strlen(call[i]) + 1));
+        if (!node->call[i]) {
+            for (; i >= 0; i--)
+                free(node->call[i]);
+            free(node->call);
+            free(node);
+            return NULL;
+        }
+        strcpy(node->call[i], call[i]);
+    }
+    node->call[i] = NULL;
+
+    node->ressources = NULL;
     node->op = op;
     node->count = count;
     node->next = next;
@@ -134,24 +155,16 @@ command *make_command_node (char **call, operator op, int count, command *next) 
 }
 
 void free_command_list (command *cmd) {
+    int i;
     command *next;
     while (cmd) {
         next = cmd->next;
-        /* no need to free call because no allocation was made */
+        for (i = 0; i < cmd->call_size; i++)
+            free(cmd->call[i]);
+        free(cmd->call);
         free(cmd->ressources);
         free(cmd);
         cmd = next;
-    }
-}
-
-void free_residual_ptr (residual_ptrs *res) {
-    residual_ptrs *next;
-    while (res) {
-        next = res->next;
-        free(res->line);
-        free(res->tokens);
-        free(res);
-        res = next;
     }
 }
 
@@ -200,7 +213,7 @@ char* readLine (void) {
 
     if (n == 0) {
         free(line);
-        exit(0);
+        close_shell();
     }
 
     line[n] = '\0'; /* null terminate string */
@@ -216,7 +229,7 @@ char* readLine (void) {
  * @exception out of memory
  * @author mathieu2em, aminesami
  */
-char **tokenize(const char *str, char *delim) {
+char **tokenize(char *str, char *delim) {
     char **tokens, **saved, *next_tok;
     int i = 0, len = MIN_SIZE;
 
@@ -281,12 +294,13 @@ error_code init_next(command *parent) {
  */
 error_code parse (char **tokens, command_head *cmd_head) {
     int i, j, k = 1;
-    char *cp;
-    operator op;
-    int count;
-    command *current, *cmd;
-    bool rnfn;
+    char *cp = NULL;
+    operator op = BIDON;
+    int count = 1;
+    command *current = NULL, *cmd = NULL;
+    bool rnfn = false;
 
+    cmd_head->command = NULL;
     cmd_head->background = false;
     // TODO : check for child node allocation and free everything if fails
     /* now create the right structures for commands */
@@ -300,11 +314,12 @@ error_code parse (char **tokens, command_head *cmd_head) {
         if (tokens[i][0] == '&') {
             /* if the argument is a and get arguments before the &&
                and set type to AND */
-            if (!tokens[i][1])
+            if (!tokens[i][1]) {
                 op = ALSO;
-            else if (tokens[i][1] == '&')
+            } else if (tokens[i][1] == '&') {
                 op = AND;
-            else {
+                cmd_head->background = true;
+            } else {
                 fprintf(stderr, syntax_error_fmt, tokens[i]);
                 goto parse_error;
             }
@@ -363,98 +378,83 @@ error_code parse (char **tokens, command_head *cmd_head) {
 
 /**
  * does the fork and execute the command
- * @param a single command structure
- * @return the resulting value returned by exec process
+ * @param a ptr to a command block
+ * @return 1 on success, 0 on exec failure, negative on fork failure
  * @exception
  * @author mathieu2em, aminesami
  */
-int execute_cmd (command cmd) {
-    int child_code = 0;
-    pid_t pid;
+int execute_cmd (command *cmd) {
+    int i, exit_code = -1;
+    pid_t pid = 0;
 
-    pid = fork();
-    if (pid < 0) {
-        fprintf(stderr, "could not fork process\n");
-        return -1;
-    } else if (pid == 0) {
-        child_code = execvp(cmd.call[0], cmd.call);
-        /* execvp only returns on error */
-        fprintf(stderr, "bash: %s: command not found\n", cmd.call[0]);
-    } else {
-        waitpid(pid, &child_code, 0);
-        child_code = WEXITSTATUS(child_code);
-    }
+    if (cmd->count <= 0)
+        return 1;
 
-    /* child_code should only be negative if fork or execvp failed */
-    return child_code;
-}
-
-/*****************************************
- * WARNING execute DOES NOT WORK FOR NOW *
- *****************************************/
-/**
- * execute & fork process
- * @param command_line the whole parsed command line structure
- * @return an integer representing the value of return code of exec fork
- * @exception
- * @author mathieu2em, aminesami
- */
-int execute (command_head cmd_head) {
-    int i, n, ret;
-    pid_t pid;
-    command *cmds = cmd_head.command;
-
-    if (cmd_head.background) {
+    for (i = 0; i < cmd->count; i++) {
         pid = fork();
         if (pid < 0) {
-            /* si le fork a fail */
             fprintf(stderr, "could not fork process\n");
+            return pid;
+        } else if (pid == 0) {
+            execvp(cmd->call[0], cmd->call);
+            /* execvp only returns on error */
+            fprintf(stderr, "bash: %s: command not found\n", cmd->call[0]);
             return -1;
-        } else if (pid != 0) {
+        }
+    }
+
+    waitpid(pid, &exit_code, 0);
+    i = WIFEXITED(exit_code);
+    if (!i)
+        return 0;
+    i = WEXITSTATUS(exit_code);
+    if (i)
+        return 0;
+    return 1;
+}
+
+/**
+ * executes a command block
+ * @param a ptr to a command block
+ * @return 0 on succes or -1 on error
+ * @exception
+ * @author mathieu2em, aminesami
+ */
+error_code execute (command *cmd) {
+    int ret;
+    operator op;
+    command *next;
+
+    if (!cmd || !cmd->call)
+        return 0;
+
+    ret = execute_cmd(cmd);
+    if (ret < 0)
+        return -1;
+
+    op = cmd->op;
+    next = cmd->next;
+
+    switch (op) {
+    case BIDON: case NONE:
+        return 0;
+    case AND:
+        if (ret)
+            return execute(next);
+        else
             return 0;
+    case OR:
+        if (ret) {
+            next = next->next;
+            while (next && (next->op == OR || next->op == NONE))
+                next = next->next;
+            if (next && next->op == AND)
+                next = next->next;
         }
+        return execute(next);
+    default:
+        return 0;
     }
-
-    for (i = 0; cmds[i].call; i++) {
-    /*
-        if (cmds[i].rnfn == 'r' || cmds[i].rnfn == 'f') {
-            for (n = 0; n < cmds[i].n; n++) {
-                ret = (cmds[i].rnfn == 'f') ? 0 : execute_cmd(cmds[i]);
-                /* ret is only negative inside child_process which failed 
-                if (ret < 0)
-                    return -1;
-            }
-        } else {
-            ret = execute_cmd(cmds[i]);
-            if (ret < 0) {
-                /* here if error in execvp or fork */
-                /* exit after, we are inside child process or fork failed 
-                return -1;
-            }
-        }*/
-
-        if (ret == 0) { /* here if success */
-            /* OR should eval until one success */
-            if (cmds[i].op == OR) {
-                /* skip until && */
-                while (cmds[i].call && cmds[i].op != AND)
-                    i++;
-                if (!cmds[i].call)
-                    break;
-            }
-        } else { /* here if failure */
-            /* AND should eval until one failure */
-            if (cmds[i].op == AND) {
-                /* skip until || */
-                while (cmds[i].call && cmds[i].op != OR)
-                    i++;
-                if (!cmds[i].call)
-                    break;
-            }
-        }
-    }
-
-    return 0;
 }
 
 /**
@@ -633,19 +633,33 @@ error_code evaluate_whole_chain(command_head *head);
  * @return un code d'erreur
  */
 error_code create_command_chain(const char *line, command_head **result) {
+    char *l;
     char **tokens;
     command_head *cmd_head;
-    tokens = tokenize(line, " \t");
+
+    /* duplicate line to save const qualifier */
+    l = strdup(line);
+    if (!l) {
+        fprintf(stderr, "could not duplicate line\n");
+        return -1;
+    }
+    
+    tokens = tokenize(l, " \t");
     /* initialize command chain head */
     cmd_head = malloc(sizeof(command_head));
     if (!cmd_head) {
         fprintf(stderr, "could not allocate command chain header\n");
+        free(l);
         return -1;
     }
     if (HAS_ERROR(parse(tokens, cmd_head))) {
         free(cmd_head);
+        free(l);
         return -1;
     }
+
+    /* at this point the duplicated string l is no longer needed */
+    free(l);
 
     *result = cmd_head; /* insert command chain at pointed location */
     return NO_ERROR;
@@ -783,44 +797,73 @@ error_code init_shell() {
  * et de votre programme.
  */
 void close_shell() {
-    // WE SHOULD ONLY FREE ALLOCATED LINES & TOKENS ARRAY HERE
+    exit(0);
 }
 
 
-/*****************************************
- * WARNING run_shell DOES NOT WORK FOR NOW *
- *****************************************/
 /**
  * Utilisez cette fonction pour y placer la boucle d'exécution (REPL)
  * de votre shell. Vous devez aussi y créer le thread banquier
  */
 void run_shell() {
-    int ret;
     char *line, **tokens;
-    command_head cmd_ln;
-
+    command *c;
+    command_head *cmd_head;
+    int ret = 0;
+    pid_t pid;
+    
     while (1) {
         line = readLine();
-        if (line) {
-            //tokens = tokenize(line, " \t");
-            //cmd_ln = parse(tokens);
-            if (!cmd_ln.command) {
-                /* means lack of memory */
-                free(tokens);
-                free(line);
-                exit(1);
-            } else {
-                ret = execute(cmd_ln);
+        if (!line)
+            exit(1);
 
-                free(cmd_ln.command);
-                free(tokens);
-                free(line);
-
-                if (ret < 0)
-                    exit(1);
-            }
+        tokens = tokenize(line, " \t");
+        if (!tokens) {
+            free(line);
+            exit(1);
         }
-        line = NULL;
+        
+        cmd_head = malloc(sizeof(command_head));
+    
+        if (!cmd_head) {
+            free(line);
+            free(tokens);
+            exit(1);
+        }
+    
+        if(HAS_ERROR(parse(tokens, cmd_head))) {
+            free(line);
+            free(tokens);
+            free(cmd_head);
+            exit(1);
+        }
+
+        // free line and tokens
+        free(tokens);
+        free(line);
+
+        if (cmd_head->background) {
+            // fork for background command
+            pid = fork();
+
+            // execute command in child process
+            if (pid == 0)
+                ret = execute(cmd_head->command);
+
+            // free used memory
+            free_command_list(cmd_head->command);
+            free(cmd_head);
+
+            // exit with 1 if fork or exec failed
+            if (pid < 0 || ret < 0)
+                exit(1);
+        } else {
+            execute(cmd_head->command);
+
+            // free used memory
+            free_command_list(cmd_head->command);
+            free(cmd_head);
+        }
     }
 }
 
@@ -830,52 +873,8 @@ void run_shell() {
  ****************************************************/
 int main (void)
 {
-    char *line, **tokens, **t;
-    command *c;
-    command_head *cmd_head;
-    residual_ptrs *residuals;
-
-    residuals = malloc(sizeof(residual_ptrs));
-    if (!residuals)
-        return 1;
-    
-    line = readLine();
-    tokens = tokenize(line, " ");
-    residuals->line = line;
-    cmd_head = malloc(sizeof(command_head));
-    
-    if (!cmd_head) {
-        free(residuals);
-        free(line);
-        free(tokens);
-        return 1;
-    }
-    
-    if(HAS_ERROR(parse(tokens, cmd_head))) {
-        free(residuals);
-        free(line);
-        free(tokens);
-        free(cmd_head);
-        return 1;
-    }
-
-    residuals->tokens = tokens;
-    puts("op values -- BIDON: 0, NONE: 1, OR: 2, AND: 3, ALSO: 4");
-    c = cmd_head->command;
-    while (c) {
-        t = c->call;
-        printf("op=%d, count=%d: ", c->op, c->count);
-        while (*t) {
-            printf("%s ", *t);
-            t++;
-        }
-        puts("");
-        c = c->next;
-    }
-
-    free_command_list(cmd_head->command);
-    free(cmd_head);
-    free_residual_ptr(residuals);
+    run_shell();
+    close_shell();
     return 0;
 }
 
