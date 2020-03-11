@@ -544,10 +544,13 @@ error_code parse_first_line(char *line) {
 
 #define FS_CMDS_COUNT 10
 #define FS_CMD_TYPE 0
+
 #define NETWORK_CMDS_COUNT 6
 #define NET_CMD_TYPE 1
+
 #define SYS_CMD_COUNTS 3
 #define SYS_CMD_TYPE 2
+
 #define MISC_CMD_TYPE 3 // for commands not in special commands or in basic commands
 
 const char *FILE_SYSTEM_CMDS[FS_CMDS_COUNT] = {
@@ -586,21 +589,29 @@ const char *SYSTEM_CMDS[SYS_CMD_COUNTS] = {
  * @param config la configuration du shell
  * @return le numéro de la catégorie (ou une erreur)
  */
-error_code resource_no(char *res_name) {
+error_code resource_no (char *res_name) {
     int i;
-    /* verify if in special commands */
-    for(i=0; i<((int)(conf->command_count)); i++)
-        if(!strcmp(res_name,conf->commands[i])) return i+4;
-    /* verify if in system, reseau or filesystem */
+
+    /* dynamic category */
+    for(i = 0; i < conf->command_count; i++)
+        if(strcmp(res_name,conf->commands[i]) == 0)
+            return i+4;
+
     /* system */
-    for(i=0; i<SYS_CMD_COUNTS; i++)
-        if(!strcmp(res_name,SYSTEM_CMDS[i])) return SYS_CMD_TYPE;
-    /* reseau */
-    for(i=0; i<NETWORK_CMDS_COUNT; i++)
-        if(!strcmp(res_name,NETWORK_CMDS[i])) return NET_CMD_TYPE;
+    for(i = 0; i < SYS_CMD_COUNTS; i++)
+        if(!strcmp(res_name,SYSTEM_CMDS[i]) == 0)
+            return SYS_CMD_TYPE;
+    
+    /* network */
+    for(i = 0; i < NETWORK_CMDS_COUNT; i++)
+        if(!strcmp(res_name,NETWORK_CMDS[i]) == 0)
+            return NET_CMD_TYPE;
+    
     /* filesystem */
-    for(i=0; i<FS_CMDS_COUNT; i++)
-        if(!strcmp(res_name,FILE_SYSTEM_CMDS[i])) return FS_CMD_TYPE;
+    for(i = 0; i < FS_CMDS_COUNT; i++)
+        if(strcmp(res_name,FILE_SYSTEM_CMDS[i]) == 0)
+            return FS_CMD_TYPE;
+    
     /* misc */
     return MISC_CMD_TYPE;
 }
@@ -611,16 +622,24 @@ error_code resource_no(char *res_name) {
  * file_sys=0, network=1, sys=2, misc=3, else.
  * if do not exist then -1
  * @param resource_no le numéro de ressource
- * @param conf la configuration du shell
  * @return la quantité de la ressource disponible
  */
-int resource_count(int resource_no) {
-    if(resource_no>3) return conf->command_caps[resource_no-3];
-    else if(resource_no==0) return conf->file_system_cap;
-    else if(resource_no==1) return conf->network_cap;
-    else if(resource_no==2) return conf->system_cap;
-    else if(resource_no==3) return conf->any_cap;
-    else return -1;
+int resource_count (int resource_no) {
+    switch (resource_no) {
+    case FS_CMD_TYPE:
+        return conf->file_system_cap;
+    case NET_CMD_TYPE:
+        return conf->network_cap;
+    case SYS_CMD_TYPE:
+        return conf->system_cap;
+    case MISC_CMD_TYPE:
+        return conf->any_cap;
+    default:
+        if (resource_no - 4 < conf->command_count)
+            return conf->command_caps[resource_no - 4];
+        else
+            return -1;
+    }
 }
 
 // Forward declaration
