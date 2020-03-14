@@ -264,27 +264,6 @@ char **tokenize(char *str, char *delim) {
 }
 
 /**
- * Adds a node and initialize default values
- * @param
- * @return
- * @exception
- * @author mathieu2em, aminesami
- *
-error_code init_next(command *parent) {
-    command *kid = malloc(sizeof(command));
-    if (!kid) {
-        fprintf(stderr, "jai fourrer ta mere\n");
-        return -1;
-    }
-    parent->next = kid;
-    kid->op = NONE;
-    kid->rnfn = '0';
-    kid->n = 0;
-    kid->next = NULL;
-    return 0;
-}
-
-/**
  * creates the cmdline structure that containes every commands with their
  * types and other particularities
  * @param tokens an array of string
@@ -457,9 +436,6 @@ error_code execute (command *cmd) {
     }
 }
 
-/***********************************************
- * FIX ME : STOP USING TOKENIZE AND USE STRTOK *
- ***********************************************/
 /**
  * Cette fonction analyse la première ligne et remplie la configuration.
  *
@@ -473,74 +449,80 @@ error_code execute (command *cmd) {
  * @param conf pointeur vers le pointeur de la configuration
  * @return un code d'erreur (ou rien si correct)
  */
-error_code parse_first_line(char *line) {
-    char **parsed_and; /* to free */
-    char **special_funcs_caps;
-    int n = 0;
-    int i = 0;
+error_code parse_first_line (char *line) {
+    char *fields[6];
+    char *c, **saved;
+    int i;
 
     conf = malloc(sizeof(configuration));
-    parsed_and = tokenize(line, "&");
-    /* verify if there is special commands capacities
-     * so we need to count how many elements are in
-     * parsed_and ; i.e. if > 4 yes else no
-     */
-    while(parsed_and[n++])
-        ;
-    /* nbr of commands , do not erase */
-    if(n>4) {
-        /* set configuration commands */
-        conf->commands = tokenize(parsed_and[0], " ,");
-        /*
-         * set configuration commands capacities
-         * tokenize give a string array so we will have to
-         * convert it to an int array
-         */
-        n=0;
-        /* gets capacities */
-        special_funcs_caps = tokenize(parsed_and[1], " ,");
-        /* count commands */
-        while (special_funcs_caps[n++])
-            ;
-        /* set it in conf */
-        conf->command_count = n-1;
-        /* show values */
-        printf("command cound = %d\n", n-1);
-        /* init conf command caps */
-        conf->command_caps = malloc(sizeof(int)*(n));
-        /* use atoi to convert string to int */
-        for(i=0; i<n-1; i++) {
-            conf->command_caps[i] = atoi(special_funcs_caps[i]);
+
+    for (i = 0; i < 6; i++) {
+        fields[i] = strtok(i == 0 ? line : NULL, "&");
+        if (!fields[i]) {
+            fprintf(stderr, "invalid first line syntax: "
+                    "not enough fields were given\n");
+            free(conf);
+            return -1;
         }
-        /* the last segment is for null */
-        conf->command_caps[n-1] = '\0';
-        /* unused after that */
-        free(special_funcs_caps);
-        special_funcs_caps = NULL; // TODO not sure if necessary
     }
-    /* testing */
-    i=0;
-    while(conf->command_caps[i]) printf("%d\n", conf->command_caps[i++]);
 
-    /* setting config values for different elems */
-    /* file_system capacity */
-    conf->file_system_cap = atoi(parsed_and[i++]);
-    /* network capacity */
-    conf->network_cap = atoi(parsed_and[i++]);
-    /* system capacity */
-    conf->system_cap = atoi(parsed_and[i++]);
-    /* any capacity */
-    conf->any_cap = atoi(parsed_and[i]);
+    // allocate special commands array
+    conf->commands = malloc(sizeof(char*));
+    if (!conf->commands) {
+        free(conf);
+        return -1;
+    }
 
-    /* count ressources for ressources_count value of config */
-    i=0;n=0;
-    while(conf->command_caps[i]) n+=conf->command_caps[i++];
-    n += (conf->file_system_cap + conf->network_cap + conf->system_cap + conf->any_cap);
-    conf->ressources_count = n;
+    // duplicate special commands substring
+    c = strdup(fields[0]);
+    if (!c) {
+        free(conf->commands);
+        free(conf);
+        return -1;
+    }
+    // this is the only string that needs freeing
+    conf->commands[0] = c;
+    
+    for (i = 1; c = strchr(c, ','); i++) {
+        *c = '\0'; // separate command strings
+        conf->commands = realloc(saved = conf->commands, sizeof(char*) * (i + 1));
+        if (!conf->commands) {
+            free(saved[0]);
+            free(saved);
+            free(conf);
+            return -1;
+        }
+        conf->commands[i] = ++c; // register next command
+    }
 
-    /* testing */
-    printf("%d,%d,%d,%d\n", conf->file_system_cap, conf->network_cap, conf->system_cap, conf->any_cap);
-    printf("ressources count : %d\n", conf->ressources_count);
+    conf->command_count = i; // register array size
+
+    conf->command_caps = malloc(sizeof(int) * i);
+    if (!conf->command_caps) {
+        free(conf->commands[0]);
+        free(conf->commands);
+        free(conf);
+        return -1;
+    }
+    
+    for (i = 0; i < conf->command_count; i++) {
+        c = strtok(i == 0 ? fields[1] : NULL, ",");
+        if (!c) {
+            fprintf(stderr, "invalid first line syntax: "
+                    "no matching amount to command '%s'\n", conf->commands[i]);
+            free(conf->command_caps);
+            free(conf->commands[0]);
+            free(conf->commands);
+            free(conf);
+            return -1;
+        }
+        conf->command_caps[i] = atoi(c); // XXX : no error check but whatever
+    }
+
+    conf->file_system_cap = atoi(fields[2]);
+    conf->network_cap = atoi(fields[3]);
+    conf->system_cap = atoi(fields[4]);
+    conf->any_cap = atoi(fields[5]);
 
     return NO_ERROR;
 }
@@ -714,7 +696,7 @@ error_code evaluate_whole_chain(command_head *head) {
     while (current) {
         if (HAS_ERROR(count_ressources(head, current))) {
             fprintf(stderr, "error occured while counting resources\n");
-            free_command_chain(head->command);
+            free_command_list(head->command);
             return -1;
         }
 
@@ -823,6 +805,8 @@ error_code init_shell() {
     /* send it to first line analyser */
     err = parse_first_line(line);
 
+    free(line);
+    
     return err;
 }
 
@@ -832,6 +816,10 @@ error_code init_shell() {
  * et de votre programme.
  */
 void close_shell() {
+    free(conf->command_caps);
+    free(conf->commands[0]);
+    free(conf->commands);
+    free(conf);
     exit(0);
 }
 
@@ -846,7 +834,7 @@ void run_shell() {
     command_head *cmd_head;
     int ret = 0;
     pid_t pid;
-    
+
     while (1) {
         line = readLine();
         if (!line)
@@ -905,19 +893,20 @@ void run_shell() {
 
 /****************************************************
  * WARNING THIS VERSION OF main IS FOR TESTING ONLY *
- ****************************************************/
+ ****************************************************
 int main (void)
 {
     run_shell();
     close_shell();
     return 0;
 }
+*/
 
 /**
  * Vous ne devez pas modifier le main!
  * Il contient la structure que vous devez utiliser. Lors des tests,
  * le main sera complètement enlevé!
- *
+ */
 int main(void) {
     if (HAS_NO_ERROR(init_shell())) {
         run_shell();
@@ -926,4 +915,4 @@ int main(void) {
         printf("Error while executing the shell.");
     }
 }
-*/
+
