@@ -584,12 +584,12 @@ error_code resource_no (char *res_name) {
 
     /* system */
     for(i = 0; i < SYS_CMD_COUNTS; i++)
-        if(!strcmp(res_name,SYSTEM_CMDS[i]) == 0)
+        if(strcmp(res_name,SYSTEM_CMDS[i]) == 0)
             return SYS_CMD_TYPE;
     
     /* network */
     for(i = 0; i < NETWORK_CMDS_COUNT; i++)
-        if(!strcmp(res_name,NETWORK_CMDS[i]) == 0)
+        if(strcmp(res_name,NETWORK_CMDS[i]) == 0)
             return NET_CMD_TYPE;
     
     /* filesystem */
@@ -796,7 +796,7 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
  * des tests (et de votre programme).
  */
 error_code init_shell() {
-    error_code err = NO_ERROR;
+    error_code err;
     char *line;
 
     /* extract first line */
