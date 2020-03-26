@@ -28,7 +28,7 @@ typedef enum {
 
 struct command_struct {
     char **call;
-    int *ressources; 
+    int *ressources;
     int call_size; // feels useless...
     int count;
     operator op;
@@ -72,7 +72,7 @@ typedef struct {
     int network_cap;
     int system_cap;
     int any_cap;
-    int no_banquers; 
+    int no_banquers;
 } configuration;
 
 int insert_char (char *, int, char, int);
@@ -319,7 +319,7 @@ error_code parse (char **tokens, command_head *cmd_head) {
                 rnfn = true;
                 tokens[i][k] = '\0';
                 count = (tokens[i][0] == 'r' ? 1 : -1) * atoi(tokens[i] + 1);
-                
+
                 if (!tokens[i][k+1])
                     j++;
                 else
@@ -350,7 +350,7 @@ error_code parse (char **tokens, command_head *cmd_head) {
 
     return 0;
 
- parse_error:
+    parse_error:
     free_command_list(cmd_head->command);
     return -1;
 }
@@ -415,24 +415,24 @@ error_code execute (command *cmd) {
     next = cmd->next;
 
     switch (op) {
-    case BIDON: case NONE:
-        return 0;
-    case AND:
-        if (ret)
-            return execute(next);
-        else
+        case BIDON: case NONE:
             return 0;
-    case OR:
-        if (ret) {
-            next = next->next;
-            while (next && (next->op == OR || next->op == NONE))
+        case AND:
+            if (ret)
+                return execute(next);
+            else
+                return 0;
+        case OR:
+            if (ret) {
                 next = next->next;
-            if (next && next->op == AND)
-                next = next->next;
-        }
-        return execute(next);
-    default:
-        return 0;
+                while (next && (next->op == OR || next->op == NONE))
+                    next = next->next;
+                if (next && next->op == AND)
+                    next = next->next;
+            }
+            return execute(next);
+        default:
+            return 0;
     }
 }
 
@@ -453,17 +453,27 @@ error_code parse_first_line (char *line) {
     char *fields[6];
     char *c, **saved;
     int i;
+    int n = 0;//count number of fields
 
     conf = malloc(sizeof(configuration));
 
+    //cas possible d'aucuns elements dans les premiers champs
     for (i = 0; i < 6; i++) {
         fields[i] = strtok(i == 0 ? line : NULL, "&");
-        if (!fields[i]) {
+        if (fields[i]&&strcmp(fields[i]," ")!=0) n++; // count number of fields
+        if (!fields[i]&&(i<4||i>5)) {
             fprintf(stderr, "invalid first line syntax: "
-                    "not enough fields were given\n");
+                            "not enough fields were given\n");
             free(conf);
             return -1;
         }
+    }
+
+    if (n<4) {
+        fprintf(stderr, "invalid first line syntax: "
+                        "not enough fields were given\n");
+        free(conf);
+        return -1;
     }
 
     // allocate special commands array
@@ -473,56 +483,70 @@ error_code parse_first_line (char *line) {
         return -1;
     }
 
-    // duplicate special commands substring
-    c = strdup(fields[0]);
-    if (!c) {
-        free(conf->commands);
-        free(conf);
-        return -1;
-    }
-    // this is the only string that needs freeing
-    conf->commands[0] = c;
-    
-    for (i = 1; c = strchr(c, ','); i++) {
-        *c = '\0'; // separate command strings
-        conf->commands = realloc(saved = conf->commands, sizeof(char*) * (i + 1));
-        if (!conf->commands) {
-            free(saved[0]);
-            free(saved);
-            free(conf);
-            return -1;
-        }
-        conf->commands[i] = ++c; // register next command
-    }
-
-    conf->command_count = i; // register array size
-
-    conf->command_caps = malloc(sizeof(int) * i);
-    if (!conf->command_caps) {
-        free(conf->commands[0]);
-        free(conf->commands);
-        free(conf);
-        return -1;
-    }
-    
-    for (i = 0; i < conf->command_count; i++) {
-        c = strtok(i == 0 ? fields[1] : NULL, ",");
+    if(n>4){
+        // duplicate special commands substring
+        c = strdup(fields[0]);
         if (!c) {
-            fprintf(stderr, "invalid first line syntax: "
-                    "no matching amount to command '%s'\n", conf->commands[i]);
-            free(conf->command_caps);
-            free(conf->commands[0]);
             free(conf->commands);
             free(conf);
             return -1;
         }
-        conf->command_caps[i] = atoi(c); // XXX : no error check but whatever
+
+        // this is the only string that needs freeing
+        conf->commands[0] = c;
+
+        for (i = 1; c = strchr(c, ','); i++) {
+            *c = '\0'; // separate command strings
+            conf->commands = realloc(saved = conf->commands, sizeof(char*) * (i + 1));
+            if (!conf->commands) {
+                free(saved[0]);
+                free(saved);
+                free(conf);
+                return -1;
+            }
+            conf->commands[i] = ++c; // register next command
+            conf->command_count = i; // register array size
+
+            conf->command_caps = malloc(sizeof(int) * i);
+            if (!conf->command_caps) {
+                free(conf->commands[0]);
+                free(conf->commands);
+                free(conf);
+                return -1;
+            }
+        }
+
+        for (i = 0; i < conf->command_count; i++) {
+            c = strtok(i == 0 ? fields[1] : NULL, ",");
+            if (!c) {
+                fprintf(stderr, "invalid first line syntax: "
+                                "no matching amount to command '%s'\n", conf->commands[i]);
+                free(conf->command_caps);
+                free(conf->commands[0]);
+                free(conf->commands);
+                free(conf);
+                return -1;
+            }
+            conf->command_caps[i] = atoi(c); // XXX : no error check but whatever
+        }
+    } else {
+        conf->commands[0] = "";
+        conf->command_count = 0;
     }
 
-    conf->file_system_cap = atoi(fields[2]);
-    conf->network_cap = atoi(fields[3]);
-    conf->system_cap = atoi(fields[4]);
-    conf->any_cap = atoi(fields[5]);
+    if(n>4){
+        conf->file_system_cap = atoi(fields[2]);
+        conf->network_cap = atoi(fields[3]);
+        conf->system_cap = atoi(fields[4]);
+        conf->any_cap = atoi(fields[5]);
+    } else {
+        conf->file_system_cap = atoi(fields[1]);
+        conf->network_cap = atoi(fields[2]);
+        conf->system_cap = atoi(fields[3]);
+        conf->any_cap = atoi(fields[4]);
+    }
+
+    printf("%d,%d,%d,%d\n", conf->file_system_cap,conf->network_cap, conf->system_cap, conf->any_cap);
 
     return NO_ERROR;
 }
@@ -586,17 +610,17 @@ error_code resource_no (char *res_name) {
     for(i = 0; i < SYS_CMD_COUNTS; i++)
         if(strcmp(res_name,SYSTEM_CMDS[i]) == 0)
             return SYS_CMD_TYPE;
-    
+
     /* network */
     for(i = 0; i < NETWORK_CMDS_COUNT; i++)
         if(strcmp(res_name,NETWORK_CMDS[i]) == 0)
             return NET_CMD_TYPE;
-    
+
     /* filesystem */
     for(i = 0; i < FS_CMDS_COUNT; i++)
         if(strcmp(res_name,FILE_SYSTEM_CMDS[i]) == 0)
             return FS_CMD_TYPE;
-    
+
     /* misc */
     return MISC_CMD_TYPE;
 }
@@ -611,19 +635,19 @@ error_code resource_no (char *res_name) {
  */
 int resource_count (int resource_no) {
     switch (resource_no) {
-    case FS_CMD_TYPE:
-        return conf->file_system_cap;
-    case NET_CMD_TYPE:
-        return conf->network_cap;
-    case SYS_CMD_TYPE:
-        return conf->system_cap;
-    case MISC_CMD_TYPE:
-        return conf->any_cap;
-    default:
-        if (resource_no - 4 < conf->command_count)
-            return conf->command_caps[resource_no - 4];
-        else
-            return -1;
+        case FS_CMD_TYPE:
+            return conf->file_system_cap;
+        case NET_CMD_TYPE:
+            return conf->network_cap;
+        case SYS_CMD_TYPE:
+            return conf->system_cap;
+        case MISC_CMD_TYPE:
+            return conf->any_cap;
+        default:
+            if (resource_no - 4 < conf->command_count)
+                return conf->command_caps[resource_no - 4];
+            else
+                return -1;
     }
 }
 
@@ -647,7 +671,7 @@ error_code create_command_chain(const char *line, command_head **result) {
         fprintf(stderr, "could not duplicate line\n");
         return -1;
     }
-    
+
     tokens = tokenize(l, " \t");
     // initialize command chain head
     cmd_head = malloc(sizeof(command_head));
@@ -657,7 +681,7 @@ error_code create_command_chain(const char *line, command_head **result) {
         free(l);
         return -1;
     }
-    
+
     if (HAS_ERROR(parse(tokens, cmd_head))) {
         free(cmd_head);
         free(tokens);
@@ -668,7 +692,7 @@ error_code create_command_chain(const char *line, command_head **result) {
     // at this point the duplicated string l is no longer needed
     free(tokens);
     free(l);
-    
+
     // maybe merge assignment with return statement
     // but for now keep seperate for clarity
     *result = cmd_head;
@@ -701,10 +725,10 @@ error_code evaluate_whole_chain(command_head *head) {
         }
 
         // here we must compute maximum concurent resources before iterating
-        
+
         current = current->next;
     }
-    
+
     return NO_ERROR;
 }
 
@@ -806,7 +830,7 @@ error_code init_shell() {
     err = parse_first_line(line);
 
     free(line);
-    
+
     return err;
 }
 
@@ -845,15 +869,15 @@ void run_shell() {
             free(line);
             exit(1);
         }
-        
+
         cmd_head = malloc(sizeof(command_head));
-    
+
         if (!cmd_head) {
             free(line);
             free(tokens);
             exit(1);
         }
-    
+
         if(HAS_ERROR(parse(tokens, cmd_head))) {
             free(line);
             free(tokens);
@@ -915,4 +939,3 @@ int main(void) {
         printf("Error while executing the shell.");
     }
 }
-
