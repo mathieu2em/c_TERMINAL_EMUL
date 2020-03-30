@@ -28,7 +28,7 @@ typedef enum {
 
 struct command_struct {
     char **call;
-    int *ressources; // contains quantity of used ressources
+    int *ressources; // contains quantity of used ressources by the command
     int call_size; // feels useless...
     int count;
     operator op;
@@ -335,7 +335,7 @@ error_code parse (char **tokens, command_head *cmd_head) {
 
         if (op != BIDON) {
             if (op != NONE)
-                tokens[i] = NULL;
+                tokens[i] = NULL; // TODO dafuck is happening here
             cmd = make_command_node(tokens + j, op, count, NULL);
             if (!cmd)
                 goto parse_error;
@@ -509,6 +509,7 @@ error_code parse_first_line (char *line) {
             }
             conf->commands[i] = ++c; // register next command
             conf->command_count = i+1; // register array size
+            conf->ressources_count = (conf->command_count) + 4;
 
             conf->command_caps = malloc(sizeof(int) * i);
             if (!conf->command_caps) {
@@ -711,7 +712,7 @@ error_code create_command_chain(const char *line, command_head **result) {
 error_code count_ressources(command_head *head, command *command_block) {
     // allocated according to number of ressources configured in first line
     command_block->ressources = malloc(sizeof(int)*conf->command_count+4);
-    
+    command_block->ressources[resource_no(*command_block->call)]=command_block->count;
     return NO_ERROR;
 }
 
