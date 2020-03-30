@@ -72,7 +72,7 @@ typedef struct {
     int network_cap;
     int system_cap;
     int any_cap;
-    int no_banquers;
+    int no_banquers;// unused
 } configuration;
 
 int insert_char (char *, int, char, int);
@@ -679,6 +679,9 @@ error_code create_command_chain(const char *line, command_head **result) {
     tokens = tokenize(l, " \t");
     // initialize command chain head
     cmd_head = malloc(sizeof(command_head));
+    // store max_resources_count future size (will be added in evaluate_whole_chain)
+    cmd_head->max_resources_count=conf->ressources_count;
+
     if (!cmd_head) {
         fprintf(stderr, "could not allocate command chain header\n");
         free(tokens);
@@ -723,6 +726,8 @@ error_code count_ressources(command_head *head, command *command_block) {
  */
 error_code evaluate_whole_chain(command_head *head) {
     command *current = head->command;
+    // allocate max_resources
+    head->max_resources = malloc(sizeof(int)*head->max_resources_count);
 
     while (current) {
         if (HAS_ERROR(count_ressources(head, current))) {
@@ -732,6 +737,7 @@ error_code evaluate_whole_chain(command_head *head) {
         }
 
         // here we must compute maximum concurent resources before iterating
+        head->max_resources[resource_no(*current->call)]+=current->count;
 
         current = current->next;
     }
