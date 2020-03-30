@@ -484,6 +484,9 @@ error_code parse_first_line (char *line) {
     }
 
     if(n>4){
+        // test
+        printf("n>4\n");
+
         // duplicate special commands substring
         c = strdup(fields[0]);
         if (!c) {
@@ -505,7 +508,7 @@ error_code parse_first_line (char *line) {
                 return -1;
             }
             conf->commands[i] = ++c; // register next command
-            conf->command_count = i; // register array size
+            conf->command_count = i+1; // register array size
 
             conf->command_caps = malloc(sizeof(int) * i);
             if (!conf->command_caps) {
@@ -828,6 +831,12 @@ error_code init_shell() {
 
     /* send it to first line analyser */
     err = parse_first_line(line);
+    /* test */
+    if(conf->command_count){
+        for(int i=0; i<conf->command_count; i++){
+            printf("%s\n",conf->commands[i]);
+        }
+    }
 
     free(line);
 
@@ -840,9 +849,11 @@ error_code init_shell() {
  * et de votre programme.
  */
 void close_shell() {
-    free(conf->command_caps);
-    free(conf->commands[0]);
-    free(conf->commands);
+    if(conf->command_count){
+        free(conf->command_caps);
+        free(conf->commands[0]);
+        free(conf->commands);
+    }
     free(conf);
     exit(0);
 }
