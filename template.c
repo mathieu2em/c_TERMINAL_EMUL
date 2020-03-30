@@ -28,7 +28,7 @@ typedef enum {
 
 struct command_struct {
     char **call;
-    int *ressources;
+    int *ressources; // contains quantity of used ressources
     int call_size; // feels useless...
     int count;
     operator op;
@@ -709,6 +709,9 @@ error_code create_command_chain(const char *line, command_head **result) {
  * @return un code d'erreur
  */
 error_code count_ressources(command_head *head, command *command_block) {
+    // allocated according to number of ressources configured in first line
+    command_block->ressources = malloc(sizeof(int)*conf->command_count+4);
+    
     return NO_ERROR;
 }
 
@@ -834,7 +837,7 @@ error_code init_shell() {
     /* test */
     if(conf->command_count){
         for(int i=0; i<conf->command_count; i++){
-            printf("%s\n",conf->commands[i]);
+            printf("%s, %d\n",conf->commands[i],conf->command_caps[i]);
         }
     }
 
