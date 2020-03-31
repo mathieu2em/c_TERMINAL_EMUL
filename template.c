@@ -75,6 +75,13 @@ typedef struct {
     int no_banquers;// unused
 } configuration;
 
+// listes chainees de threads
+typedef struct pthreads_list tlist;
+struct pthreads_list {
+    pthread_t t;
+    tlist *next;
+};
+
 int insert_char (char *, int, char, int);
 char *readLine (void);
 char **tokenize (char *, char *);
@@ -83,6 +90,9 @@ int execute_cmd (command*);
 error_code execute (command *);
 command *make_command_node (char **, operator, int, command *);
 void free_command_list (command *);
+
+tlist make_tlist_node (tlist *);
+void free_tlist (tlist *);
 
 void close_shell (void);
 void run_shell (void);
@@ -165,6 +175,26 @@ void free_command_list (command *cmd) {
         free(cmd->ressources);
         free(cmd);
         cmd = next;
+    }
+}
+
+tlist make_tlist_node (tlist *next) {
+    tlist *ls = malloc(sizeof(tlist));
+    ls->next = next;
+    return ls;
+}
+
+// TODO : ask charlie about this
+void free_tlist (tlist *ls) {
+    tlist *next;
+    while (ls) {
+        next = ls->next;
+        // maybe should be pthread_cancel
+        if (pthread_join(ls->t, NULL)) {
+            fprintf(stderr, "could not join thread\n");
+        }
+        free(ls);
+        ls = next;
     }
 }
 
@@ -434,6 +464,17 @@ error_code execute (command *cmd) {
         default:
             return 0;
     }
+}
+
+error_code execute_background (command_head *head) {
+    ret = execute(head->command);
+
+    // free used memory
+    free_command_list(head->command);
+    free(head);
+
+    if (ret < 0)
+        exit(1);
 }
 
 /**
@@ -878,8 +919,10 @@ void run_shell() {
     command *c;
     command_head *cmd_head;
     int ret = 0;
-    pid_t pid;
-
+    // pid_t pid;
+    tlist thread_list = NULL;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
     while (1) {
         line = readLine();
         if (!line)
@@ -911,6 +954,10 @@ void run_shell() {
         free(line);
 
         if (cmd_head->background) {
+            thread_list = make_tlist_node(thread_list);
+            pthread_create(&(thread_list->t), &attr, execute_background, cmd_head);
+            
+            /*
             // fork for background command
             pid = fork();
 
@@ -925,6 +972,7 @@ void run_shell() {
             // exit with 1 if fork or exec failed
             if (pid < 0 || ret < 0)
                 exit(1);
+            */
         } else {
             execute(cmd_head->command);
 
@@ -933,6 +981,8 @@ void run_shell() {
             free(cmd_head);
         }
     }
+    pthread_attr_destroy(&attr);
+    free_tlist(thread_list);
 }
 
 
