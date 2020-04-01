@@ -881,6 +881,22 @@ error_code unregister_command(banker_customer *customer) {
  * @return
  */
 int bankers(int *work, int *finish) {
+    int *available = malloc(sizeof(int)*conf->ressources_count);
+    int *needed = malloc(sizeof(int)*conf->ressources_count);
+    int i;
+
+    //copier work dans available
+    for(i=0; i<(int)conf->ressources_count; i++){
+        available[i]=work[i];
+    }
+
+    for(i=0; i<(int)conf->ressources_count; i++){
+        finish[i]=false;
+    }
+
+    i=0;
+    while(finish[i++]);
+
     return 0;
 }
 
