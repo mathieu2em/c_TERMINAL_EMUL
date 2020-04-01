@@ -50,11 +50,11 @@ struct command_chain_head_struct {
 typedef struct banker_customer_struct banker_customer;
 
 struct banker_customer_struct {
-    command_head *head;
-    banker_customer *next;
-    banker_customer *prev;
-    int *current_resources;
-    int depth;
+    command_head *head;     // tête de la commande
+    banker_customer *next;  // client suivant
+    banker_customer *prev;  // client précédent
+    int *current_resources; // ressources utilisées en ce moment
+    int depth;              // profondeur de commande courante du client
 };
 
 typedef int error_code;
@@ -797,15 +797,41 @@ static pthread_mutex_t *available_mutex = NULL;
 // TODO use mutexes when changing or reading _available!
 int *_available = NULL;
 
-
 /**
  * Cette fonction enregistre une chaîne de commande pour être exécutée
  * Elle retourne NULL si la chaîne de commande est déjà enregistrée ou
- * si une erreur se produit pendant l'exécution.
+ * si une erreur se produit pendant l'exécution
  * @param head la tête de la chaîne de commande
  * @return le pointeur vers le compte client retourné
  */
 banker_customer *register_command(command_head *head) {
+
+    banker_customer *current;
+    int i;
+
+    // if there is still no banker create it
+    if(!first){
+        first = malloc(sizeof(banker_customer));
+        current = first;
+    }
+    // else go to last existing node and add a new one
+    else {
+        current = first;
+        // get last elem
+        while(current->next) current=current->next;
+        // add the new one
+        current->next = malloc(sizeof(banker_customer));
+        current = current->next;
+    }
+
+    current->head = head;
+
+    //create current_resources table and fill it with 0s
+    current->current_resources = malloc(sizeof(int)*conf->ressources_count);
+    for(i=0;i<(int)conf->ressources_count;i++) current->current_resources[i] = 0;
+
+    current->depth=-1;
+
     return NULL;
 }
 
@@ -976,7 +1002,7 @@ void run_shell() {
         } else {
             execute(cmd_head->command);
 
-            // free used memory
+            // free used memory TODO modify
             free_command_list(cmd_head->command);
             free(cmd_head);
         }
