@@ -851,6 +851,25 @@ banker_customer *register_command(command_head *head) {
  * @return un code d'erreur
  */
 error_code unregister_command(banker_customer *customer) {
+    // on verifie si cest first
+    if(!customer->prev){
+        // si c'est le cas on assigne first au suivant
+        first = customer->next;
+        // on assigne le precedent de first a NULL
+        first->prev = NULL;
+        // on assigne le precedent de celui qui suit first a first
+        first->next->prev = first;
+    }
+    // sinon on ajuste normalement
+    else {
+        customer->prev->next = customer->next;
+        customer->next->prev = customer->prev;
+    }
+    // liberation de la memoire
+    free(customer->current_resources);
+    free_command_list(customer->head->command);
+    free(customer->head);
+
     return NO_ERROR;
 }
 
