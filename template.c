@@ -821,6 +821,12 @@ banker_customer *register_command(command_head *head) {
         while(current->next) current=current->next;
         // add the new one
         current->next = malloc(sizeof(banker_customer));
+        if(!current->next){
+            fprintf(stderr, "command node could not be allocated\n");
+            return NULL;
+        }
+
+        current->next->prev = current;
         current = current->next;
     }
 
@@ -982,7 +988,7 @@ void run_shell() {
         if (cmd_head->background) {
             thread_list = make_tlist_node(thread_list);
             pthread_create(&(thread_list->t), &attr, execute_background, cmd_head);
-            
+
             /*
             // fork for background command
             pid = fork();
