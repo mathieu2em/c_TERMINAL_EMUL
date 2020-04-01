@@ -873,31 +873,72 @@ error_code unregister_command(banker_customer *customer) {
     return NO_ERROR;
 }
 
+bool all_good(int *);
 /**
  * Exécute l'algo du banquier sur work et finish.
+ * TODO s'assurer que finish et work sont bien alloués
  *
  * @param work
  * @param finish
  * @return
  */
 int bankers(int *work, int *finish) {
-    int *available = malloc(sizeof(int)*conf->ressources_count);
-    int *needed = malloc(sizeof(int)*conf->ressources_count);
-    int i;
+    int *max = first->head->max_resources; // known in command head
+    int *allocated = first->current_resources; // known in banquer customer
+    int i,j;
+    bool is_good = false;
+    int n = conf->ressources_count; // number of ressources
+    banker_customer *current = first;
 
-    //copier work dans available
-    for(i=0; i<(int)conf->ressources_count; i++){
-        available[i]=work[i];
+    j=0;
+    while(!all_good(finish)){
+        if(!finish[j]){
+            max = current->head->max_resources; // known in command head
+            allocated = current->current_resources; // known in banquer customer
+            // max - allocation = needed
+            is_good=true;
+            for(i = 0; i < n; i++) {
+                if(max[i]-allocated[i] > work[i]){
+                    is_good = false;
+                    break;
+                }
+            }
+
+            if(is_good){
+                // is good so : work = work + alloc and finish[j] = true
+                for(i=0; i<n; i++){
+                    work[i] += allocated[i];
+                }
+                // this element is finished
+                finish[j] = true;
+                // we go back to start
+                current = first;
+                j = 0;
+            }
+            // we passed all the elements without being able to finish one so game over
+            else if(!current->next){
+                return false;
+            } else {
+                current = current->next;
+                j++;
+            }
+        } else {
+            // go to next element
+            if(current->next){
+                current = current->next;
+                j++;
+            }
+        }
     }
+    // we got out of the while loop and everything finished rightly
+    return true;
+}
 
-    for(i=0; i<(int)conf->ressources_count; i++){
-        finish[i]=false;
-    }
-
-    i=0;
-    while(finish[i++]);
-
-    return 0;
+// Verifie si on est a gagne dans le banquier
+bool all_good(int *finish){
+    int i = 0;
+    while(finish[i]) if(!finish[i++]) return false;
+    return true;
 }
 
 /**
