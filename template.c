@@ -91,7 +91,7 @@ error_code execute (command *);
 command *make_command_node (char **, operator, int, command *);
 void free_command_list (command *);
 
-tlist make_tlist_node (tlist *);
+tlist *make_tlist_node (tlist *);
 void free_tlist (tlist *);
 
 void close_shell (void);
@@ -178,7 +178,7 @@ void free_command_list (command *cmd) {
     }
 }
 
-tlist make_tlist_node (tlist *next) {
+tlist *make_tlist_node (tlist *next) {
     tlist *ls = malloc(sizeof(tlist));
     ls->next = next;
     return ls;
@@ -467,6 +467,7 @@ error_code execute (command *cmd) {
 }
 
 error_code execute_background (command_head *head) {
+    int ret;
     ret = execute(head->command);
 
     // free used memory
@@ -475,6 +476,7 @@ error_code execute_background (command_head *head) {
 
     if (ret < 0)
         exit(1);
+    return ret;
 }
 
 /**
@@ -952,7 +954,7 @@ void run_shell() {
     command_head *cmd_head;
     int ret = 0;
     // pid_t pid;
-    tlist thread_list = NULL;
+    tlist *thread_list = NULL;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     while (1) {
