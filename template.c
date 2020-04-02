@@ -991,12 +991,26 @@ void call_bankers(banker_customer *customer) {
  * @return
  */
 void *banker_thread_run() {
-    // 1. Acquerir le mutex d'enregistrement
-    pthread_mutex_lock(register_mutex);
-    // 2. Parcourir tous les clients enregistres
-    // 3. En trouver un dont le depth n'est pas -1 ( si on n'en trouve pas, mutex unlock et passe a prochain tour de boucle)
-    // 4. Appelle call_bankers sur ce client
-    // 5. deverouiller le mutex d'enregistrement
+    banker_customer *current;
+    // execute sans fin
+    while(true){
+        // 1. Acquerir le mutex d'enregistrement
+        pthread_mutex_lock(register_mutex);
+        // 2. Parcourir tous les clients enregistres
+        current = first;
+        while(current){
+            // 3. En trouver un dont le depth n'est pas -1
+            // ( si on n'en trouve pas, mutex unlock et passe a prochain tour de boucle)
+            if(current->depth != -1){
+                // 4. Appelle call_bankers sur ce client
+                call_bankers(current);
+                break;
+            }
+            current=current->next;
+        }
+        // 5. deverouiller le mutex d'enregistrement
+        pthread_mutex_unlock(register_mutex);
+    }
     return NULL;
 }
 
