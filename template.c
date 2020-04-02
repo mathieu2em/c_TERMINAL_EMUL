@@ -124,7 +124,7 @@ int insert_char (char *str, int pos, char c, int len)
 
 
 command *make_command_node (char **call, operator op, int count, command *next) {
-    char **c = NULL, **saved;
+    // char **c = NULL, **saved;
     int i;
     command *node = malloc(sizeof(command));
     if (!node) {
@@ -541,7 +541,7 @@ error_code parse_first_line (char *line) {
         // this is the only string that needs freeing
         conf->commands[0] = c;
 
-        for (i = 1; c = strchr(c, ','); i++) {
+        for (i = 1; (c = strchr(c, ',')); i++) {
             *c = '\0'; // separate command strings
             conf->commands = realloc(saved = conf->commands, sizeof(char*) * (i + 1));
             if (!conf->commands) {
@@ -840,7 +840,8 @@ banker_customer *register_command(command_head *head) {
 
     current->depth=-1;
 
-    return NULL;
+    // TODO call request_ressource ?
+    return current;
 }
 
 /**
@@ -953,13 +954,15 @@ bool all_good(int *finish){
 void call_bankers(banker_customer *customer) {
 
     // 1. wait for mutex
-    pthread_mutex_lock(available_mutex);
+    if(pthread_mutex_lock(available_mutex)) exit(1);
 
     int *work;
     int *finish;
     int i = 1;
     int j;
+    int n = (int)(conf->ressources_count);
     banker_customer *current = first;
+    command *c = customer->head->command;
 
     // ---allocation of finish table---
     // 1. count number of banker elements in chained list
@@ -969,19 +972,41 @@ void call_bankers(banker_customer *customer) {
     }
     // 2. malloc memory for table with one more field for end flag
     finish = malloc(sizeof(int)*(i+1));
+    if(!finish) exit(1);
+
     // 3. fill with falses
     for(j = 0; j < i; j++){
         finish[j]=false;
     }
     finish[i] = -1;// end flag
 
+    // modify available
+    // 1. get command at depth
+    for(i = 0; i < customer->depth; i++){
+        if(c->next) c = c->next;
+        else fprintf(stderr, "WHAT THE FUCK BRUH\n");
+    }
+    // 2. modify available
+    for(i = 0; i < n; i++){
+        _available[i] -= c->ressources[i];
+    }
     // copy available to work
-    work = malloc(sizeof(int) * conf->ressources_count);
-    for(i = 0; i < (int)conf->ressources_count; i++){
+    work = malloc(sizeof(int) * n);
+    if(!work){
+        exit(1);
+    }
+    for(i = 0; i < n; i++)
         work[i] = _available[i];
 
+    // si banker chi on restore available.
+    if(!bankers(work, finish)){
+        for(i = 0; i < n; i++){
+            _available[i] += c->ressources[i];
+        }
+    }
+
     // liberate the mutex
-    pthread_mutex_unlock(available_mutex);
+    if(pthread_mutex_unlock(available_mutex)) exit(1);
 }
 
 /**
@@ -1001,7 +1026,7 @@ void *banker_thread_run() {
         while(current){
             // 3. En trouver un dont le depth n'est pas -1
             // ( si on n'en trouve pas, mutex unlock et passe a prochain tour de boucle)
-            if(current->depth != -1){
+            if(current->depth >= 0){
                 // 4. Appelle call_bankers sur ce client
                 call_bankers(current);
                 break;
@@ -1027,7 +1052,16 @@ void *banker_thread_run() {
  * @return un code d'erreur
  */
 error_code request_resource(banker_customer *customer, int cmd_depth) {
-    
+    pthread_mutex_t *mut = customer->head->mutex;
+    // lock le mutex de head pour faire ses shit yo
+    if(pthread_mutex_lock(mut)) return -1;
+    // attend que le banquier finisse ses shit
+    if(pthread_mutex_lock(register_mutex)) return -1;
+    // changer le depth a la position d'execution de la ligne ou on est rendu
+    customer->depth = cmd_depth;
+    // on peut debarrer
+    if(pthread_mutex_unlock(register_mutex)) return -1;
+    if(pthread_mutex_unlock(mut)) return -1;
     return NO_ERROR;
 }
 
@@ -1047,7 +1081,7 @@ error_code init_shell() {
     err = parse_first_line(line);
     /* test */
     if(conf->command_count){
-        for(int i=0; i<conf->command_count; i++){
+        for(int i = 0; i < (int)conf->command_count; i++){
             printf("%s, %d\n",conf->commands[i],conf->command_caps[i]);
         }
     }
