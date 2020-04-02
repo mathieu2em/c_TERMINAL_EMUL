@@ -946,10 +946,42 @@ bool all_good(int *finish){
  *
  * Doit utiliser des mutex pour se synchroniser. Doit allour des structures en mémoire. Doit finalement faire "comme si"
  * la requête avait passé, pour défaire l'allocation au besoin...
+ * TODO : tester conditions de deadlock évidentes
  *
  * @param customer
  */
 void call_bankers(banker_customer *customer) {
+
+    // 1. wait for mutex
+    pthread_mutex_lock(available_mutex);
+
+    int *work;
+    int *finish;
+    int i = 1;
+    int j;
+    banker_customer *current = first;
+
+    // ---allocation of finish table---
+    // 1. count number of banker elements in chained list
+    while(current->next){
+        i++;
+        current = current->next;
+    }
+    // 2. malloc memory for table with one more field for end flag
+    finish = malloc(sizeof(int)*(i+1));
+    // 3. fill with falses
+    for(j = 0; j < i; j++){
+        finish[j]=false;
+    }
+    finish[i] = -1;// end flag
+
+    // copy available to work
+    work = malloc(sizeof(int) * conf->ressources_count);
+    for(i = 0; i < (int)conf->ressources_count; i++){
+        work[i] = _available[i];
+
+    // liberate the mutex
+    pthread_mutex_unlock(available_mutex);
 }
 
 /**
