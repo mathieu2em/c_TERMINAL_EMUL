@@ -852,8 +852,10 @@ banker_customer *register_command(command_head *head) {
  * @return un code d'erreur
  */
 error_code unregister_command(banker_customer *customer) {
+    int i;
+    int n = conf->ressources_count;
     // on verifie si cest first
-    if(!customer->prev){
+    if(customer == first){
         // si c'est le cas on assigne first au suivant
         first = customer->next;
         // on assigne le precedent de first a NULL
@@ -866,6 +868,12 @@ error_code unregister_command(banker_customer *customer) {
         customer->prev->next = customer->next;
         customer->next->prev = customer->prev;
     }
+    if(pthread_mutex_lock(available_mutex)) return -1;
+    // liberer les ressources
+    for(i = 0; i < n; i++){
+        _available[i] += customer->current_resources[i];
+    }
+    if(pthread_mutex_unlock(available_mutex)) return -1;
     // liberation de la memoire
     free(customer->current_resources);
     free_command_list(customer->head->command);
@@ -1003,6 +1011,11 @@ void call_bankers(banker_customer *customer) {
         for(i = 0; i < n; i++){
             _available[i] += c->ressources[i];
         }
+    } else {
+        // si banker chi pas on actualise les ressources du customer
+        for(i = 0; i < n; i++){
+            customer->current_resources[i] += c->ressources[i];
+        }
     }
 
     // liberate the mutex
@@ -1073,22 +1086,40 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
 error_code init_shell() {
     error_code err;
     char *line;
+    int i;
 
-    /* extract first line */
+    // extract first line
     line = readLine();
 
-    /* send it to first line analyser */
-    err = parse_first_line(line);
-    /* test */
+    // send it to first line analyser
+    if(HAS_ERROR(parse_first_line(line))){
+        fprintf(stderr, " AAAAAAAH\n");
+        return -1;
+    }
+    if(pthread_mutex_lock(available_mutex)) return -1;
+
+    // set available ressources to the right thing yeah
+    _available = malloc(sizeof(int)*conf->ressources_count);
+    if(!_available) return -1;
+
+    _available[FS_CMD_TYPE] = conf->file_system_cap;
+    _available[NET_CMD_TYPE] = conf->network_cap;
+    _available[SYS_CMD_TYPE] = conf->system_cap;
+    _available[MISC_CMD_TYPE] = conf->any_cap;
+    for(i = 0; i < (int)(conf->command_count); i++){
+        _available[i + 4] = conf->command_caps[i];
+    }
+
+    // test
     if(conf->command_count){
-        for(int i = 0; i < (int)conf->command_count; i++){
+        for(int i = 0; i < (int)(conf->command_count); i++){
             printf("%s, %d\n",conf->commands[i],conf->command_caps[i]);
         }
     }
 
     free(line);
 
-    return err;
+    return NO_ERROR;
 }
 
 /**
