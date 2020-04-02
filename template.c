@@ -780,7 +780,7 @@ error_code evaluate_whole_chain(command_head *head) {
         }
 
         // here we must compute maximum concurent resources before iterating
-        head->max_resources[resource_no(*current->call)]+=current->count;
+        head->max_resources[resource_no(*current->call)] += current->count;
 
         current = current->next;
     }
@@ -991,6 +991,12 @@ void call_bankers(banker_customer *customer) {
  * @return
  */
 void *banker_thread_run() {
+    // 1. Acquerir le mutex d'enregistrement
+    pthread_mutex_lock(register_mutex);
+    // 2. Parcourir tous les clients enregistres
+    // 3. En trouver un dont le depth n'est pas -1 ( si on n'en trouve pas, mutex unlock et passe a prochain tour de boucle)
+    // 4. Appelle call_bankers sur ce client
+    // 5. deverouiller le mutex d'enregistrement
     return NULL;
 }
 
@@ -1007,6 +1013,7 @@ void *banker_thread_run() {
  * @return un code d'erreur
  */
 error_code request_resource(banker_customer *customer, int cmd_depth) {
+    
     return NO_ERROR;
 }
 
