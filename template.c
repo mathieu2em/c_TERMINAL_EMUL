@@ -1091,23 +1091,30 @@ void *banker_thread_run() {
 error_code request_resource(banker_customer *customer, int cmd_depth) {
     int ret;
 
-    //printf("request resource...\n");
+    printf("request resource for '%s %s' (bg : %s)...\n",
+           customer->head->command->call[0],
+           customer->head->command->call[1],
+           customer->head->background ? "true" : "false");
     pthread_mutex_lock(register_mutex);
     customer->depth = cmd_depth;
     pthread_mutex_unlock(register_mutex);
 
-    //let banker_thread_lock mutex
-    pthread_mutex_lock(register_mutex);
-
+    //let banker_thread lock mutex
+    //pthread_mutex_lock(register_mutex);
+    sleep(1);
     // wait for autorisation
     //printf("waiting for autorisation...\n");
     pthread_mutex_lock(customer->head->mutex);
     //printf("receiving anwser...\n");
+    printf("receiving anwser for '%s %s' (bg : %s)...\n",
+           customer->head->command->call[0],
+           customer->head->command->call[1],
+           customer->head->background ? "true" : "false");
     ret = customer->depth < 0 ? NO_ERROR : -1;
     customer->depth = -1;
     pthread_mutex_unlock(customer->head->mutex);
 
-    pthread_mutex_unlock(register_mutex);
+    //pthread_mutex_unlock(register_mutex);
 
     return ret;
 }
@@ -1128,7 +1135,6 @@ void *command_handler(void *arg){
     // dependamment de cque exec command retourne et du type dla commande
     // ca setup les shit pour la prochaine iteration de la boucle
     while (current && current->call) { // TODO on checkera si le deuxieme cond est necessaire lol
-
         if(HAS_ERROR(request_resource(c, depth)))
             continue;
 
@@ -1287,8 +1293,6 @@ void run_shell() {
             break;
         }
 
-        printf("%s\n", line);
-
         if(HAS_ERROR(create_command_chain(line, &cmd_head))) {
             free(line);
             pthread_attr_destroy(&attr);
@@ -1299,7 +1303,7 @@ void run_shell() {
 
         customer = register_command(cmd_head);
         if(!customer){
-            fprintf(stderr, "could not\n");
+            fprintf(stderr, "could not register command\n");
             free_command_list(cmd_head->command);
             free(cmd_head);
             pthread_attr_destroy(&attr);
