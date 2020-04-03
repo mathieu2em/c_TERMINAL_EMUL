@@ -1118,8 +1118,14 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
            customer->head->command->call_size > 1 ? customer->head->command->call[1] : "",
            customer->head->background ? "true" : "false");
     pthread_mutex_unlock(customer->head->mutex);
+<<<<<<< HEAD
 
     return NO_ERROR;
+=======
+    //pthread_mutex_unlock(register_mutex);
+
+    return ret;
+>>>>>>> 19757b2ae1968f3558e1f6739a728e97f0c320bb
 }
 
 // cette fonction va avoir une loop qui va call request ressources pour tt la commande
@@ -1313,6 +1319,7 @@ void run_shell() {
         }
 
         if (cmd_head->background) {
+            printf("background\n");
             thread_list = make_tlist_node(thread_list);
             pthread_create(&(thread_list->t), &attr, command_handler, customer);
         } else {
