@@ -1061,17 +1061,15 @@ void *banker_thread_run() {
         //printf("banker_thread...\n");
         while (current) {
             // 3. En trouver un dont le depth n'est pas -1
-            pthread_mutex_lock(current->head->mutex);
-            
+            //pthread_mutex_lock(current->head->mutex);
+
             //printf("got customer's mutex\n");
             if (current->depth >= 0) {
                 // 4. Appelle call_bankers sur ce client
                 printf("call_bankers...\n");
                 call_bankers(current);
-                break;
+                //break;
             }
-
-            pthread_mutex_unlock(current->head->mutex);
             current = current->next;
         }
         // 5. deverouiller le mutex d'enregistrement
@@ -1095,31 +1093,29 @@ void *banker_thread_run() {
 error_code request_resource(banker_customer *customer, int cmd_depth) {
     int ret;
 
-    printf("request resource for '%s %s' (bg : %s)...\n",
+    /*printf("request resource for '%s %s' (bg : %s)...\n",
            customer->head->command->call[0],
            customer->head->command->call_size > 1 ? customer->head->command->call[1] : "",
-           customer->head->background ? "true" : "false");
-    pthread_mutex_lock(register_mutex);
+           customer->head->background ? "true" : "false");*/
+    pthread_mutex_lock(customer->head->mutex);
     customer->depth = cmd_depth;
-    pthread_mutex_unlock(register_mutex);
+    pthread_mutex_lock(customer->head->mutex);
     // restart banker_thread_run loop
 
-    // let banker lock mutex
-    
     // wait for autorisation
     //printf("waiting for autorisation...\n");
-    printf("waiting for '%s %s' (bg : %s)...\n",
+    /*printf("waiting for '%s %s' (bg : %s)...\n",
            customer->head->command->call[0],
            customer->head->command->call_size > 1 ? customer->head->command->call[1] : "",
-           customer->head->background ? "true" : "false");
-    pthread_mutex_lock(customer->head->mutex);
+           customer->head->background ? "true" : "false");*/
+    //pthread_mutex_lock(customer->head->mutex);
     //printf("receiving anwser...\n");
-    printf("permission granted for '%s %s' (bg : %s)...\n",
+    /*printf("permission granted for '%s %s' (bg : %s)...\n",
            customer->head->command->call[0],
            customer->head->command->call_size > 1 ? customer->head->command->call[1] : "",
-           customer->head->background ? "true" : "false");
+           customer->head->background ? "true" : "false");*/
     pthread_mutex_unlock(customer->head->mutex);
-    
+
     return NO_ERROR;
 }
 
