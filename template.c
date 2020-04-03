@@ -87,7 +87,6 @@ char *readLine (void);
 char **tokenize (char *, char *);
 error_code parse (char **, command_head *);
 int execute_cmd (command*);
-error_code execute (command *);
 command *make_command_node (char **, operator, int, command *);
 void free_command_list (command *);
 
@@ -178,11 +177,24 @@ void free_command_list (command *cmd) {
     }
 }
 
-void destroy_command_chain (command_head *ch) {
-    free(ch->max_resources);
-    free_command_list(ch->command);
-    free(ch->mutex);
-    //gg
+void free_configuration () {
+    if (conf->command_count){
+        free(conf->commands[0]);
+        free(conf->commands);
+        free(conf->command_caps);
+    }
+    free(conf);
+}
+
+void destroy_command_chain (command_head *head) {
+    if (head->command)
+        free_command_list(head->command);
+
+    if (head->max_resources)
+        free(head->max_resources);
+
+    if (head->mutex)
+        free(head->mutex);
 }
 
 tlist *make_tlist_node (tlist *next) {
@@ -248,10 +260,11 @@ char* readLine (void) {
             return NULL;
     }
 
-    if (n == 0) {
-        free(line);
-        close_shell();
-    }
+    // should not exit before "exit"
+    // if (n == 0) {
+    //     free(line);
+    //     close_shell();
+    // }
 
     line[n] = '\0'; /* null terminate string */
 
@@ -430,66 +443,6 @@ int execute_cmd (command *cmd) {
 }
 
 /**
- * executes a command block
- * @param a ptr to a command block
- * @return 0 on succes or -1 on error
- * @exception
- * @author mathieu2em, aminesami
- */
-error_code execute (command *cmd) {
-    int ret;
-    operator op;
-    command *next;
-
-    if (!cmd || !cmd->call)
-        return 0;
-    //TODO request resource icitte
-    // vu que request resource va juste retourner une valeur met que le banquier dise ok
-    // ca bloque en attendant yeah
-
-    ret = execute_cmd(cmd);
-    if (ret < 0)
-        return -1;
-
-    op = cmd->op;
-    next = cmd->next;
-
-    switch (op) {
-        case BIDON: case NONE:
-            return 0;
-        case AND:
-            if (ret)
-                return execute(next);
-            else
-                return 0;
-        case OR:
-            if (ret) {
-                next = next->next;
-                while (next && (next->op == OR || next->op == NONE))
-                    next = next->next;
-                if (next && next->op == AND)
-                    next = next->next;
-            }
-            return execute(next);
-        default:
-            return 0;
-    }
-}
-
-void *execute_background (void *arg) {
-    command_head *head = (command_head *)arg;
-    long ret = execute(head->command);
-
-    // free used memory
-    free_command_list(head->command);
-    free(head);
-
-    if (ret < 0)
-        exit(1);
-    return (void *)ret; // TODO not sure
-}
-
-/**
  * Cette fonction analyse la première ligne et remplie la configuration.
  *
  * si une commande faisant partie des commandes de base est détectée dans
@@ -528,15 +481,14 @@ error_code parse_first_line (char *line) {
         free(conf);
         return -1;
     }
+    if (n > 4) {
+        // allocate special commands array
+        conf->commands = malloc(sizeof(char*));
+        if (!conf->commands) {
+            free(conf);
+            return -1;
+        }
 
-    // allocate special commands array
-    conf->commands = malloc(sizeof(char*));
-    if (!conf->commands) {
-        free(conf);
-        return -1;
-    }
-
-    if(n>4){
         // duplicate special commands substring
         c = strdup(fields[0]);
         if (!c) {
@@ -552,21 +504,22 @@ error_code parse_first_line (char *line) {
             *c = '\0'; // separate command strings
             conf->commands = realloc(saved = conf->commands, sizeof(char*) * (i + 1));
             if (!conf->commands) {
-                free(saved[0]);
-                free(saved);
+                free(saved[0]); // free duplicated string
+                free(saved); // free saved array
                 free(conf);
                 return -1;
             }
             conf->commands[i] = ++c; // register next command
             conf->command_count = i+1; // register array size
+        }
 
-            conf->command_caps = malloc(sizeof(int) * i);
-            if (!conf->command_caps) {
-                free(conf->commands[0]);
-                free(conf->commands);
-                free(conf);
-                return -1;
-            }
+        // allocate command_caps array
+        conf->command_caps = malloc(sizeof(int) * i);
+        if (!conf->command_caps) {
+            free(conf->commands[0]);
+            free(conf->commands);
+            free(conf);
+            return -1;
         }
 
         for (i = 0; i < (int)(conf->command_count); i++) {
@@ -583,25 +536,20 @@ error_code parse_first_line (char *line) {
             conf->command_caps[i] = atoi(c); // XXX : no error check but whatever
         }
     } else {
-        conf->commands[0] = "";
+        conf->commands = NULL;
         conf->command_caps = NULL;
         conf->command_count = 0;
     }
 
     conf->ressources_count = (conf->command_count) + 4;
 
-    if(n>4){
-        conf->file_system_cap = atoi(fields[2]);
-        conf->network_cap = atoi(fields[3]);
-        conf->system_cap = atoi(fields[4]);
-        conf->any_cap = atoi(fields[5]);
-    } else {
-        conf->file_system_cap = atoi(fields[1]);
-        conf->network_cap = atoi(fields[2]);
-        conf->system_cap = atoi(fields[3]);
-        conf->any_cap = atoi(fields[4]);
-    }
-
+    i = n > 4 ? 1 : 0;
+    
+    conf->file_system_cap = atoi(fields[1 + i]);
+    conf->network_cap = atoi(fields[2 + i]);
+    conf->system_cap = atoi(fields[3 + i]);
+    conf->any_cap = atoi(fields[4 + i]);
+    
     return NO_ERROR;
 }
 
@@ -727,18 +675,25 @@ error_code create_command_chain(const char *line, command_head **result) {
     }
 
     tokens = tokenize(l, " \t");
+    if (!tokens) {
+        free(l);
+        return -1;
+    }
+    
     // initialize command chain head
     cmd_head = malloc(sizeof(command_head));
-
     if (!cmd_head) {
         fprintf(stderr, "could not allocate command chain header\n");
         free(tokens);
         free(l);
         return -1;
     }
-    // store max_resources_count future size (will be added in evaluate_whole_chain)
-    cmd_head->max_resources_count = conf->ressources_count;
 
+    // just in case malloc gives us reused memory
+    cmd_head->command = NULL;
+    cmd_head->max_resources = NULL;
+    cmd_head->mutex = NULL;
+    
     if (HAS_ERROR(parse(tokens, cmd_head))) {
         free(cmd_head);
         free(tokens);
@@ -746,16 +701,25 @@ error_code create_command_chain(const char *line, command_head **result) {
         return -1;
     }
 
-    // at this point the duplicated string l is no longer needed
+    // at this point the duplicated string l and
+    // tokens array is no longer needed
     free(tokens);
     free(l);
 
+    // prepare cmd_head struct
+    cmd_head->max_resources_count = conf->ressources_count;
+    cmd_head->max_resources = malloc(sizeof(int) * cmd_head->max_resources_count);
+    if (!cmd_head->max_resources) {
+        fprintf(stderr, "could not allocate command head's resources array\n");
+        destroy_command_chain(cmd_head);
+    }
+    
     cmd_head->mutex = malloc(sizeof(pthread_mutex_t));
     if(!cmd_head->mutex){
-        free(cmd_head);
+        fprintf(stderr, "could not allocate command head's mutex\n");
+        destroy_command_chain(cmd_head);
         return -1;
     }
-
 
     // maybe merge assignment with return statement
     // but for now keep seperate for clarity
@@ -772,8 +736,10 @@ error_code create_command_chain(const char *line, command_head **result) {
  */
 error_code count_ressources(command_head *head, command *command_block) {
     // allocated according to number of ressources configured in first line
-    command_block->ressources = malloc(sizeof(int)*conf->ressources_count);
-    command_block->ressources[resource_no(command_block->call[0])]=command_block->count;
+    command_block->ressources = malloc(sizeof(int) * conf->ressources_count);
+
+    command_block->ressources[resource_no(command_block->call[0])] = command_block->count;
+
     // here we must compute maximum concurent resources before iterating
     head->max_resources[resource_no(command_block->call[0])] += command_block->count;
 
@@ -787,13 +753,10 @@ error_code count_ressources(command_head *head, command *command_block) {
  */
 error_code evaluate_whole_chain(command_head *head) {
     command *current = head->command;
-    // allocate max_resources
-    head->max_resources = malloc(sizeof(int)*head->max_resources_count);
-
     while (current) {
         if (HAS_ERROR(count_ressources(head, current))) {
             fprintf(stderr, "error occured while counting resources\n");
-            free_command_list(head->command);
+            destroy_command_chain(head);
             return -1;
         }
         current = current->next;
@@ -821,20 +784,24 @@ int *_available = NULL;
  * @return le pointeur vers le compte client retourné
  */
 banker_customer *register_command(command_head *head) {
-
     banker_customer *current;
     int i;
 
-    // if there is still no banker create it
-    if(!first){
+    pthread_mutex_lock(register_mutex);
+    if (!first) {
         first = malloc(sizeof(banker_customer));
+        if (!first) {
+            fprintf(stderr, "customers list could not be initalized\n");
+            return NULL;
+        }
+        first->prev = NULL;
         current = first;
-    }
-        // else go to last existing node and add a new one
-    else {
+    } else {
         current = first;
         // get last elem
-        while(current->next) current=current->next;
+        while(current->next)
+            current = current->next;
+        
         // add the new one
         current->next = malloc(sizeof(banker_customer));
         if(!current->next){
@@ -846,17 +813,22 @@ banker_customer *register_command(command_head *head) {
         current = current->next;
     }
 
+    current->next = NULL;
     current->head = head;
 
     //create current_resources table and fill it with 0s
     current->current_resources = malloc(sizeof(int)*conf->ressources_count);
-    for(i=0;i<(int)conf->ressources_count;i++) current->current_resources[i] = 0;
+    if (!current->current_resources) {
+        fprintf(stderr, "could not create customer's resources table\n");
+        free(current);
+    }
 
-    pthread_mutex_lock(current->head->mutex);
-    current->depth=-1;
-    pthread_mutex_unlock(current->head->mutex);
+    for (i = 0; i < (int)(conf->ressources_count); i++)
+        current->current_resources[i] = 0;
 
-    // TODO call request_ressource ?
+    current->depth = -1;
+
+    pthread_mutex_unlock(register_mutex);
     return current;
 }
 
@@ -872,6 +844,8 @@ error_code unregister_command(banker_customer *customer) {
     int n = conf->ressources_count;
 
     printf("unregister command...\n");
+
+    pthread_mutex_lock(register_mutex);
 
     // on verifie si cest first
     if(customer == first){
@@ -897,6 +871,8 @@ error_code unregister_command(banker_customer *customer) {
     free(customer->current_resources);
     destroy_command_chain(customer->head);
     free(customer);
+
+    pthread_mutex_unlock(register_mutex);
 
     printf("command unregistered\n");
     return NO_ERROR;
@@ -980,69 +956,85 @@ bool all_good(int *finish){
  * @param customer
  */
 void call_bankers(banker_customer *customer) {
-    printf("acquire availible mutex\n");
-    // 1. wait for mutex
-    pthread_mutex_lock(available_mutex);
-
     int *work;
     int *finish;
-    int i = 1;
+    int i;
     int j;
-    int n = (int)(conf->ressources_count);
-    banker_customer *current = first;
-    command *c = customer->head->command;
+    int n;
+    banker_customer *current;
+    command *c;
+    
+    // 1. wait for mutex
+    pthread_mutex_lock(available_mutex);
+    printf("acquired available mutex\n");
+    
+    n = (int)(conf->ressources_count);
+    current = first;
+    c = customer->head->command;
 
     // ---allocation of finish table---
-    // 1. count number of banker elements in chained list
-    while(current->next){
-        i++;
+    // 1. count number of banker elements in chained list (+ 1 for end flag)
+    for (i = 1; current->next; i++)
         current = current->next;
-    }
-    // 2. malloc memory for table with one more field for end flag
-    finish = malloc(sizeof(int)*(i+1));
-    if(!finish) exit(1);
 
-    // 3. fill with falses
-    for(j = 0; j < i; j++){
-        finish[j]=false;
-    }
-    finish[i] = -1;// end flag
-
-    // modify available
-    // 1. get command at depth
-    for(i = 0; i < customer->depth; i++){
-        if(c->next) c = c->next;
-        else fprintf(stderr, "WHAT THE FUCK BRUH\n");
-    }
-    // 2. modify available
-    for(i = 0; i < n; i++){
-        _available[i] -= c->ressources[i];
-    }
-    // copy available to work
-    work = malloc(sizeof(int) * n);
-    if(!work){
+    // 2. malloc table
+    finish = malloc(sizeof(int) * (i + 1));
+    if (!finish) {
+        fprintf(stderr, "could not allocate finish table\n");
         exit(1);
     }
-    for(i = 0; i < n; i++)
-        work[i] = _available[i];
 
-    // si banker chi on restore available.
-    if(!bankers(work, finish)){
+    // 3. fill with falses
+    for (j = 0; j < i; j++)
+        finish[j]=false;
+    finish[i] = -1;// end flag
+
+    // updating available table
+    
+    // 1. get command at depth
+    for(i = 0; i < customer->depth; i++) {
+        if (c->next) {
+            c = c->next;
+        } else {
+            fprintf(stderr, "invalid depth for command\n");
+            exit(1);
+        }
+    }
+    // 2. modify available
+    for (i = 0; i < n; i++) {
+        _available[i] -= c->ressources[i];
+    }
+    
+    // copy available to work
+    work = malloc(sizeof(int) * n);
+    if (!work) {
+        fprintf(stderr, "could not allocate work table\n");
+        free(finish);
+        exit(1);
+    }
+    memcpy(work, _available, sizeof(int) * n);
+    //for(i = 0; i < n; i++)
+    //    work[i] = _available[i];
+
+    // is request safe?
+    if (bankers(work, finish)) {
+        // if so, update resources in customer
+        for(i = 0; i < n; i++)
+            customer->current_resources[i] += c->ressources[i];
+
+        current->depth = -1; // grant request
+    } else {
+        // otherwise reset _available to original state
         for(i = 0; i < n; i++){
             _available[i] += c->ressources[i];
         }
-    } else {
-        // si banker chi pas on actualise les ressources du customer
-        for(i = 0; i < n; i++){
-            customer->current_resources[i] += c->ressources[i];
-        }
-        current->depth = -1;
-        pthread_mutex_unlock(current->head->mutex);
     }
 
+    pthread_mutex_unlock(current->head->mutex);
+    printf("released customer's mutex\n");
     // liberate the mutex
     pthread_mutex_unlock(available_mutex);
-    printf("release availible mutex\n");
+    printf("released available mutex\n");
 }
 
 /**
@@ -1059,17 +1051,20 @@ void *banker_thread_run() {
         pthread_mutex_lock(register_mutex);
         // 2. Parcourir tous les clients enregistres
         current = first;
-        while(current){
+        //printf("banker_thread...\n");
+        while (current) {
             // 3. En trouver un dont le depth n'est pas -1
-            // ( si on n'en trouve pas, mutex unlock et passe a prochain tour de boucle)
-            if(current->depth >= 0){
+            pthread_mutex_lock(current->head->mutex);
+            //printf("got customer's mutex\n");
+            if (current->depth >= 0) {
                 // 4. Appelle call_bankers sur ce client
-                pthread_mutex_lock(current->head->mutex);
                 printf("call_bankers...\n");
                 call_bankers(current);
                 break;
             }
-            current=current->next;
+            
+            pthread_mutex_unlock(current->head->mutex);
+            current = current->next;
         }
         // 5. deverouiller le mutex d'enregistrement
         pthread_mutex_unlock(register_mutex);
@@ -1090,45 +1085,54 @@ void *banker_thread_run() {
  * @return un code d'erreur
  */
 error_code request_resource(banker_customer *customer, int cmd_depth) {
-    pthread_mutex_t *mut = customer->head->mutex;
+    int ret;
 
-    pthread_mutex_lock(mut);
+    printf("request resource...\n");
+    pthread_mutex_lock(register_mutex);
     customer->depth = cmd_depth;
-    pthread_mutex_unlock(mut);
+    pthread_mutex_unlock(register_mutex);
 
-    
-    pthread_mutex_lock(mut);
-    pthread_mutex_unlock(mut);
+    //let banker_thread_lock mutex
+    pthread_mutex_lock(register_mutex);
+    pthread_mutex_unlock(register_mutex);
 
-    return NO_ERROR;
+    // wait for autorisation
+    printf("waiting for autorisation...\n");
+    pthread_mutex_lock(customer->head->mutex);
+    ret = customer->depth < 0 ? NO_ERROR : -1;
+    customer->depth = -1;
+    pthread_mutex_unlock(customer->head->mutex);
+
+    return ret;
 }
 
 // cette fonction va avoir une loop qui va call request ressources pour tt la commande
 void *command_handler(void *arg){
     command *current, *next;
-    int depth_value;
+    int depth;
     long ret;
     operator op;
     banker_customer *c = (banker_customer *)arg;
 
-    printf("command handler begin\n");
-    depth_value = 0;
+    depth = 0;
     current = c->head->command;
 
-    printf("reached after current init in handler\n");
     // faire une boucle qui va faire appel a request ressource pour chaque bloc individuel
     // apres ca a call execute command
     // dependamment de cque exec command retourne et du type dla commande
     // ca setup les shit pour la prochaine iteration de la boucle
-    while(current && current->call){ // TODO on checkera si le deuxieme cond est necessaire lol
+    while (current && current->call) { // TODO on checkera si le deuxieme cond est necessaire lol
 
-        if(HAS_ERROR(request_resource(c, depth_value++))) exit(1);
+        if(HAS_ERROR(request_resource(c, depth)))
+            continue;
 
+        printf("executing '%s' (depth: %d)...\n", current->call[0], depth);
         ret = execute_cmd(current);
         if(ret < 0) exit(1);
 
         op = current->op;
         next = current->next;
+        depth++;
 
         switch (op) {
 
@@ -1144,12 +1148,17 @@ void *command_handler(void *arg){
             case OR:
                 if (ret) {
                     next = next->next;
-
-                    while (next && (next->op == OR || next->op == NONE))
+                    depth++;
+                    
+                    while (next && (next->op == OR || next->op == NONE)) {
                         next = next->next;
+                        depth++;
+                    }
 
-                    if (next && next->op == AND)
+                    if (next && next->op == AND) {
                         next = next->next;
+                        depth++;
+                    }
                 }
                 break;
 
@@ -1173,32 +1182,46 @@ void *command_handler(void *arg){
 error_code init_shell() {
     char *line;
     int i;
+    
     available_mutex = malloc(sizeof(pthread_mutex_t));
-    if(!available_mutex) return -1;
+    if (!available_mutex) {
+        fprintf(stderr, "could not init available_mutex\n");
+        return -1;
+    }
+    
     register_mutex = malloc(sizeof(pthread_mutex_t));
-    if(!register_mutex) return -1;
+    if (!register_mutex) {
+        free(available_mutex);
+        fprintf(stderr, "could not init register_mutex\n");
+        return -1;
+    }
 
     // extract first line
     line = readLine();
 
     // send it to first line analyser
     if(HAS_ERROR(parse_first_line(line))){
-        fprintf(stderr, " AAAAAAAH\n");
         return -1;
     }
+
+    // line is no longer needed
+    free(line);
+    
+    // init _available begin
     pthread_mutex_lock(available_mutex);
 
-    // set available ressources to the right thing yeah
     _available = malloc(sizeof(int)*conf->ressources_count);
-    if(!_available) return -1;
+    if (!_available) {
+        free_configuration();
+        return -1;
+    }
 
     for(i = 0; i < (int)(conf->ressources_count); i++){
         _available[i] = resource_count(i);
     }
 
     pthread_mutex_unlock(available_mutex);
-
-    free(line);
+    // init _available end 
 
     return NO_ERROR;
 }
@@ -1211,16 +1234,12 @@ tlist *thread_list = NULL;
  * et de votre programme.
  */
 void close_shell() {
-    if(conf->command_count){
-        free(conf->command_caps);
-        free(conf->commands[0]);
-        free(conf->commands);
-    }
+    free_configuration();
+    
     free(available_mutex);
     free(register_mutex);
     free(_available);
 
-    free(conf);
     free_tlist(thread_list);
     exit(0);
 }
@@ -1241,13 +1260,15 @@ void run_shell() {
     banker_customer *customer;
     pthread_t banker_thread;
 
-    printf("run shell\n");
     pthread_attr_init(&attr);
     pthread_create(&banker_thread, &attr, banker_thread_caller, NULL);
-    while (1) {
+    
+    while (true) {
         line = readLine();
-        if (!line)
-            exit(1);
+        if (!line) {
+            fprintf(stderr, "error while reading input\n");
+            break;
+        }
 
         if(HAS_ERROR(create_command_chain(line, &cmd_head))) {
             free(line);
@@ -1258,13 +1279,11 @@ void run_shell() {
 
         customer = register_command(cmd_head);
         if(!customer){
-            fprintf(stderr, "dafuck bruh\n");
+            fprintf(stderr, "could not\n");
             free_command_list(cmd_head->command);
             free(cmd_head);
             exit(1); // TODO ptetre qui faut pas exit jsais pas
         }
-
-        printf("bfr bckgrnd\n");
 
         if (cmd_head->background) {
             thread_list = make_tlist_node(thread_list);
@@ -1297,6 +1316,6 @@ int main(void) {
         run_shell();
         close_shell();
     } else {
-        printf("Error while executing the shell.");
+        fprintf(stderr, "Error while executing the shell.\n");
     }
 }
