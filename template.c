@@ -178,6 +178,13 @@ void free_command_list (command *cmd) {
     }
 }
 
+void destroy_command_chain (command_head *ch) {
+    free(ch->max_resources);
+    free_command_list(ch->command);
+    free(ch->mutex);
+    //gg
+}
+
 tlist *make_tlist_node (tlist *next) {
     tlist *ls = malloc(sizeof(tlist));
     ls->next = next;
@@ -746,9 +753,17 @@ error_code create_command_chain(const char *line, command_head **result) {
     free(tokens);
     free(l);
 
+    cmd_head->mutex = malloc(sizeof(pthread_mutex_t));
+    if(!cmd_head->mutex){
+        free(cmd_head);
+        return -1;
+    }
+
+
     // maybe merge assignment with return statement
     // but for now keep seperate for clarity
     *result = cmd_head;
+
     return evaluate_whole_chain(cmd_head);
 }
 
@@ -878,8 +893,8 @@ error_code unregister_command(banker_customer *customer) {
     if(pthread_mutex_unlock(available_mutex)) return -1;
     // liberation de la memoire
     free(customer->current_resources);
-    free_command_list(customer->head->command);
-    free(customer->head);
+    destroy_command_chain(customer->head);
+    free(customer);
 
     return NO_ERROR;
 }
@@ -1149,6 +1164,8 @@ done:
 error_code init_shell() {
     char *line;
     int i;
+    available_mutex = malloc(sizeof(pthread_mutex_t));
+    register_mutex = malloc(sizeof(pthread_mutex_t));
 
     // extract first line
     line = readLine();
@@ -1184,6 +1201,8 @@ error_code init_shell() {
     return NO_ERROR;
 }
 
+tlist *thread_list = NULL;
+
 /**
  * Utilisez cette fonction pour nettoyer les ressources de votre
  * shell. Cette fonction est appelée uniquement à la fin des tests
@@ -1195,7 +1214,12 @@ void close_shell() {
         free(conf->commands[0]);
         free(conf->commands);
     }
+    free(available_mutex);
+    free(register_mutex);
+    free(_available);
+
     free(conf);
+    free_tlist(thread_list);
     exit(0);
 }
 
@@ -1205,41 +1229,23 @@ void close_shell() {
  * de votre shell. Vous devez aussi y créer le thread banquier
  */
 void run_shell() {
-    char *line, **tokens;
-    command_head *cmd_head;
-    // pid_t pid;
-    tlist *thread_list = NULL;
+    char *line;
+    command_head *cmd_head = NULL;
     pthread_attr_t attr;
     banker_customer *customer;
+
     pthread_attr_init(&attr);
+
     while (1) {
         line = readLine();
         if (!line)
             exit(1);
 
-        tokens = tokenize(line, " \t");
-        if (!tokens) {
+        if(HAS_ERROR(create_command_chain(line, &cmd_head))) {
             free(line);
             exit(1);
         }
 
-        cmd_head = malloc(sizeof(command_head));
-
-        if (!cmd_head) {
-            free(line);
-            free(tokens);
-            exit(1);
-        }
-
-        if(HAS_ERROR(parse(tokens, cmd_head))) {
-            free(line);
-            free(tokens);
-            free(cmd_head);
-            exit(1);
-        }
-
-        // free line and tokens
-        free(tokens);
         free(line);
 
         customer = register_command(cmd_head);
@@ -1258,7 +1264,6 @@ void run_shell() {
         }
     }
     pthread_attr_destroy(&attr);
-    free_tlist(thread_list);
 }
 
 /****************************************************
