@@ -188,7 +188,7 @@ void free_configuration () {
 
 void destroy_command_chain (command_head *head) {
     if (head->mutex) {
-        pthread_mutex_lock(head->mutex);
+        pthread_mutex_destroy(head->mutex);
         free(head->mutex);
     }
 
@@ -341,9 +341,9 @@ error_code parse (char **tokens, command_head *cmd_head) {
                and set type to AND */
             if (!tokens[i][1]) {
                 op = ALSO;
+                cmd_head->background = true;
             } else if (tokens[i][1] == '&') {
                 op = AND;
-                cmd_head->background = true;
             } else {
                 fprintf(stderr, syntax_error_fmt, tokens[i]);
                 goto parse_error;
@@ -716,6 +716,7 @@ error_code create_command_chain(const char *line, command_head **result) {
         destroy_command_chain(cmd_head);
         return -1;
     }
+    pthread_mutex_init(cmd_head->mutex, NULL);
 
     // maybe merge assignment with return statement
     // but for now keep seperate for clarity
@@ -1051,7 +1052,7 @@ void *banker_thread_run() {
         //printf("banker_thread...\n");
         while (current) {
             // 3. En trouver un dont le depth n'est pas -1
-            pthread_mutex_trylock(current->head->mutex);
+            pthread_mutex_lock(current->head->mutex);
             //printf("got customer's mutex\n");
             if (current->depth >= 0) {
                 // 4. Appelle call_bankers sur ce client
@@ -1186,6 +1187,7 @@ error_code init_shell() {
         fprintf(stderr, "could not init available_mutex\n");
         return -1;
     }
+    pthread_mutex_init(available_mutex, NULL);
 
     register_mutex = malloc(sizeof(pthread_mutex_t));
     if (!register_mutex) {
@@ -1193,6 +1195,7 @@ error_code init_shell() {
         fprintf(stderr, "could not init register_mutex\n");
         return -1;
     }
+    pthread_mutex_init(register_mutex, NULL);
 
     // extract first line
     line = readLine();
@@ -1235,7 +1238,10 @@ void close_shell() {
     free_configuration();
 
     free(available_mutex);
+    pthread_mutex_destroy(available_mutex);
     free(register_mutex);
+    pthread_mutex_destroy(register_mutex);
+    
     free(_available);
 
     free_tlist(thread_list);
