@@ -205,14 +205,12 @@ tlist *make_tlist_node (tlist *next) {
     return ls;
 }
 
-// TODO : ask charlie about this
 void free_tlist (tlist *ls) {
     tlist *next;
     while (ls) {
         next = ls->next;
-        // maybe should be pthread_cancel
-        if (pthread_join(ls->t, NULL)) {
-            fprintf(stderr, "could not join thread\n");
+        if (pthread_cancel(ls->t)) {
+            fprintf(stderr, "could not cancel thread\n");
         }
         free(ls);
         ls = next;
@@ -368,8 +366,13 @@ error_code parse (char **tokens, command_head *cmd_head) {
 
                 if (!tokens[i][k+1])
                     j++;
-                else
+                else {
                     tokens[i] += k + 1;
+                    if (cp = strchr(tokens[i], ')')) {
+                        *cp = '\0';
+                        rnfn = false;
+                    }
+                }
                 /* j = i;*/
             } else {
                 fprintf(stderr, syntax_error_fmt, tokens[i]);
@@ -381,7 +384,7 @@ error_code parse (char **tokens, command_head *cmd_head) {
 
         if (op != BIDON) {
             if (op != NONE)
-                tokens[i] = NULL; // TODO dafuck is happening here
+                tokens[i] = NULL;
             cmd = make_command_node(tokens + j, op, count, NULL);
             if (!cmd)
                 goto parse_error;
@@ -840,7 +843,7 @@ error_code unregister_command(banker_customer *customer) {
     int i;
     int n = conf->ressources_count;
 
-    printf("unregister command...\n");
+    //printf("unregister command...\n");
 
     pthread_mutex_lock(register_mutex);
 
@@ -864,7 +867,7 @@ error_code unregister_command(banker_customer *customer) {
         _available[i] += customer->current_resources[i];
     }
     pthread_mutex_unlock(available_mutex);
-    
+
     // liberation de la memoire
     free(customer->current_resources);
     destroy_command_chain(customer->head);
@@ -872,7 +875,7 @@ error_code unregister_command(banker_customer *customer) {
 
     pthread_mutex_unlock(register_mutex);
 
-    printf("command unregistered\n");
+    //printf("command unregistered\n");
     return NO_ERROR;
 }
 
@@ -885,31 +888,33 @@ bool all_good(int *);
  * @param finish
  * @return
  */
-int bankers(int *work, int *finish) {
-    int *max = first->head->max_resources; // known in command head
-    int *allocated = first->current_resources; // known in banquer customer
-    int i,j;
-    bool is_good = false;
-    int n = conf->ressources_count; // number of ressources
+int bankers (int *work, int *finish) {
+    int *max;
+    int *allocated;
+    int i, j;
+    bool is_good;
+    int n;
     banker_customer *current = first;
 
-    j=0;
-    while(!all_good(finish)){
-        if(!finish[j]){
+    is_good = false;
+    n = conf->ressources_count; // number of ressources
+    j = 0;
+    while (!all_good(finish)) {
+        if (!finish[j]) {
             max = current->head->max_resources; // known in command head
             allocated = current->current_resources; // known in banquer customer
             // max - allocation = needed
-            is_good=true;
-            for(i = 0; i < n; i++) {
-                if(max[i]-allocated[i] > work[i]){
+            is_good = true;
+            for (i = 0; i < n; i++) {
+                if (max[i] - allocated[i] > work[i]) {
                     is_good = false;
                     break;
                 }
             }
 
-            if(is_good){
+            if (is_good) {
                 // is good so : work = work + alloc and finish[j] = true
-                for(i=0; i<n; i++){
+                for(i = 0; i < n; i++) {
                     work[i] += allocated[i];
                 }
                 // this element is finished
@@ -917,9 +922,8 @@ int bankers(int *work, int *finish) {
                 // we go back to start
                 current = first;
                 j = 0;
-            }
+            } else if (!current->next) {
                 // we passed all the elements without being able to finish one so game over
-            else if(!current->next){
                 return false;
             } else {
                 current = current->next;
@@ -927,7 +931,7 @@ int bankers(int *work, int *finish) {
             }
         } else {
             // go to next element
-            if(current->next){
+            if (current->next) {
                 current = current->next;
                 j++;
             }
@@ -938,9 +942,11 @@ int bankers(int *work, int *finish) {
 }
 
 // Verifie si on est a gagne dans le banquier
-bool all_good(int *finish){
+bool all_good (int *finish) {
     int i = 0;
-    while(finish[i]) if(!finish[i++]) return false;
+    while (finish[i])
+        if (!finish[i++])
+            return false;
     return true;
 }
 
@@ -964,7 +970,7 @@ void call_bankers(banker_customer *customer) {
 
     // 1. wait for mutex
     pthread_mutex_lock(available_mutex);
-    printf("acquired available mutex\n");
+    //printf("acquired available mutex\n");
 
     n = (int)(conf->ressources_count);
     current = first;
@@ -1029,10 +1035,10 @@ void call_bankers(banker_customer *customer) {
     }
 
     pthread_mutex_unlock(current->head->mutex);
-    printf("released customer's mutex\n");
+    //printf("released customer's mutex\n");
     // liberate the mutex
     pthread_mutex_unlock(available_mutex);
-    printf("released available mutex\n");
+    //printf("released available mutex\n");
 }
 
 /**
@@ -1056,7 +1062,7 @@ void *banker_thread_run() {
             //printf("got customer's mutex\n");
             if (current->depth >= 0) {
                 // 4. Appelle call_bankers sur ce client
-                printf("call_bankers...\n");
+                //printf("call_bankers...\n");
                 call_bankers(current);
                 break;
             }
@@ -1085,7 +1091,7 @@ void *banker_thread_run() {
 error_code request_resource(banker_customer *customer, int cmd_depth) {
     int ret;
 
-    printf("request resource...\n");
+    //printf("request resource...\n");
     pthread_mutex_lock(register_mutex);
     customer->depth = cmd_depth;
     pthread_mutex_unlock(register_mutex);
@@ -1094,13 +1100,13 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
     pthread_mutex_lock(register_mutex);
 
     // wait for autorisation
-    printf("waiting for autorisation...\n");
+    //printf("waiting for autorisation...\n");
     pthread_mutex_lock(customer->head->mutex);
-    printf("receiving anwser...\n");
+    //printf("receiving anwser...\n");
     ret = customer->depth < 0 ? NO_ERROR : -1;
     customer->depth = -1;
     pthread_mutex_unlock(customer->head->mutex);
-    
+
     pthread_mutex_unlock(register_mutex);
 
     return ret;
@@ -1126,7 +1132,7 @@ void *command_handler(void *arg){
         if(HAS_ERROR(request_resource(c, depth)))
             continue;
 
-        printf("executing '%s' (depth: %d)...\n", current->call[0], depth);
+        //printf("executing '%s' (depth: %d)...\n", current->call[0], depth);
         ret = execute_cmd(current);
         if(ret < 0) exit(1);
 
@@ -1241,7 +1247,7 @@ void close_shell() {
     pthread_mutex_destroy(available_mutex);
     free(register_mutex);
     pthread_mutex_destroy(register_mutex);
-    
+
     free(_available);
 
     free_tlist(thread_list);
@@ -1267,6 +1273,8 @@ void run_shell() {
     pthread_attr_init(&attr);
     pthread_create(&banker_thread, &attr, banker_thread_caller, NULL);
 
+    printf("welcome to shell...\n");
+    
     while (true) {
         line = readLine();
         if (!line) {
@@ -1274,8 +1282,16 @@ void run_shell() {
             break;
         }
 
+        if (strcmp(line, "exit") == 0) {
+            free(line);
+            break;
+        }
+
+        printf("%s\n", line);
+
         if(HAS_ERROR(create_command_chain(line, &cmd_head))) {
             free(line);
+            pthread_attr_destroy(&attr);
             exit(1);
         }
 
@@ -1286,6 +1302,7 @@ void run_shell() {
             fprintf(stderr, "could not\n");
             free_command_list(cmd_head->command);
             free(cmd_head);
+            pthread_attr_destroy(&attr);
             exit(1); // TODO ptetre qui faut pas exit jsais pas
         }
 
