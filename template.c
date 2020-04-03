@@ -537,9 +537,6 @@ error_code parse_first_line (char *line) {
     }
 
     if(n>4){
-        // test
-        printf("n>4\n");
-
         // duplicate special commands substring
         c = strdup(fields[0]);
         if (!c) {
@@ -602,8 +599,6 @@ error_code parse_first_line (char *line) {
         conf->system_cap = atoi(fields[3]);
         conf->any_cap = atoi(fields[4]);
     }
-
-    printf("%d,%d,%d,%d\n", conf->file_system_cap,conf->network_cap, conf->system_cap, conf->any_cap);
 
     return NO_ERROR;
 }
@@ -1187,13 +1182,6 @@ error_code init_shell() {
     _available[MISC_CMD_TYPE] = conf->any_cap;
     for(i = 0; i < (int)(conf->command_count); i++){
         _available[i + 4] = conf->command_caps[i];
-    }
-
-    // test
-    if(conf->command_count){
-        for(int i = 0; i < (int)(conf->command_count); i++){
-            printf("%s, %d\n",conf->commands[i],conf->command_caps[i]);
-        }
     }
 
     free(line);
