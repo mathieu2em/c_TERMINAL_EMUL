@@ -1113,8 +1113,6 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
     ret = customer->depth < 0 ? NO_ERROR : -1;
     customer->depth = -1;
     pthread_mutex_unlock(customer->head->mutex);
-<<<<<<< Updated upstream
-
     //pthread_mutex_unlock(register_mutex);
 
     return ret;
