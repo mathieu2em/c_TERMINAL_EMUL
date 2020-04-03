@@ -828,7 +828,7 @@ banker_customer *register_command(command_head *head) {
         first = malloc(sizeof(banker_customer));
         current = first;
     }
-    // else go to last existing node and add a new one
+        // else go to last existing node and add a new one
     else {
         current = first;
         // get last elem
@@ -866,20 +866,21 @@ banker_customer *register_command(command_head *head) {
 error_code unregister_command(banker_customer *customer) {
     int i;
     int n = conf->ressources_count;
+
     // on verifie si cest first
     if(customer == first){
         // si c'est le cas on assigne first au suivant
         first = customer->next;
-        // on assigne le precedent de first a NULL
-        first->prev = NULL;
-        // on assigne le precedent de celui qui suit first a first
-        first->next->prev = first;
     }
-    // sinon on ajuste normalement
-    else {
+
+    if(customer->prev){
         customer->prev->next = customer->next;
+    }
+
+    if(customer->next){
         customer->next->prev = customer->prev;
     }
+
     if(pthread_mutex_lock(available_mutex)) return -1;
     // liberer les ressources
     for(i = 0; i < n; i++){
@@ -936,7 +937,7 @@ int bankers(int *work, int *finish) {
                 current = first;
                 j = 0;
             }
-            // we passed all the elements without being able to finish one so game over
+                // we passed all the elements without being able to finish one so game over
             else if(!current->next){
                 return false;
             } else {
@@ -1117,33 +1118,33 @@ void *command_handler(void *arg){
 
         switch (op) {
 
-        case BIDON: case NONE:
-            goto done;
-
-        case AND:
-            if (ret)
-                break;
-            else
+            case BIDON: case NONE:
                 goto done;
 
-        case OR:
-            if (ret) {
-                next = next->next;
+            case AND:
+                if (ret)
+                    break;
+                else
+                    goto done;
 
-                while (next && (next->op == OR || next->op == NONE))
+            case OR:
+                if (ret) {
                     next = next->next;
 
-                if (next && next->op == AND)
-                    next = next->next;
-            }
-            break;
+                    while (next && (next->op == OR || next->op == NONE))
+                        next = next->next;
 
-        default:
-            goto done;
+                    if (next && next->op == AND)
+                        next = next->next;
+                }
+                break;
+
+            default:
+                goto done;
         }
         current = next;
     }
-done:
+    done:
     unregister_command(c);
 
     // TODO destroy command pi toute plein de shits
@@ -1160,7 +1161,9 @@ error_code init_shell() {
     char *line;
     int i;
     available_mutex = malloc(sizeof(pthread_mutex_t));
+    if(!available_mutex) return -1;
     register_mutex = malloc(sizeof(pthread_mutex_t));
+    if(!register_mutex) return -1;
 
     // extract first line
     line = readLine();
@@ -1211,6 +1214,10 @@ void close_shell() {
     exit(0);
 }
 
+void *banker_thread_caller(void *_){
+    banker_thread_run();
+    return _;
+}
 
 /**
  * Utilisez cette fonction pour y placer la boucle d'exécution (REPL)
@@ -1221,8 +1228,10 @@ void run_shell() {
     command_head *cmd_head = NULL;
     pthread_attr_t attr;
     banker_customer *customer;
+    pthread_t banker_thread;
 
     pthread_attr_init(&attr);
+    pthread_create(&banker_thread, &attr, banker_thread_caller, NULL);
 
     while (1) {
         line = readLine();
