@@ -853,7 +853,9 @@ banker_customer *register_command(command_head *head) {
     current->current_resources = malloc(sizeof(int)*conf->ressources_count);
     for(i=0;i<(int)conf->ressources_count;i++) current->current_resources[i] = 0;
 
+    pthread_mutex_lock(current->head->mutex);
     current->depth=-1;
+    pthread_mutex_unlock(current->head->mutex);
 
     // TODO call request_ressource ?
     return current;
@@ -1038,6 +1040,7 @@ void call_bankers(banker_customer *customer) {
 
     // liberate the mutex
     pthread_mutex_unlock(available_mutex);
+    printf("release availible mutex\n");
 }
 
 /**
@@ -1057,11 +1060,14 @@ void *banker_thread_run() {
         while(current){
             // 3. En trouver un dont le depth n'est pas -1
             // ( si on n'en trouve pas, mutex unlock et passe a prochain tour de boucle)
+            pthread_mutex_lock(current->head->mutex);
             if(current->depth >= 0){
                 // 4. Appelle call_bankers sur ce client
                 call_bankers(current);
+                pthread_mutex_unlock(current->head->mutex);
                 break;
             }
+            pthread_mutex_unlock(current->head->mutex);
             current=current->next;
         }
         // 5. deverouiller le mutex d'enregistrement
@@ -1084,17 +1090,18 @@ void *banker_thread_run() {
  */
 error_code request_resource(banker_customer *customer, int cmd_depth) {
     pthread_mutex_t *mut = customer->head->mutex;
-    // lock le mutex de head pour faire ses shit yo
-    pthread_mutex_lock(mut);
-    printf("got first mutex\n");
-    // attend que le banquier finisse ses shit
+
     pthread_mutex_lock(register_mutex);
+    printf("got first mutex\n");
+
+    pthread_mutex_lock(mut);
     printf("got second mutex\n");
-    // changer le depth a la position d'execution de la ligne ou on est rendu
+
     customer->depth = cmd_depth;
-    // on peut debarrer
+
+    pthread_mutex_unlock(mut);
     pthread_mutex_unlock(register_mutex);
-        pthread_mutex_unlock(mut);
+
     return NO_ERROR;
 }
 
@@ -1121,6 +1128,7 @@ void *command_handler(void *arg){
         pthread_mutex_lock(c->head->mutex);
         c->depth = -1;
         pthread_mutex_unlock(c->head->mutex);
+        
         ret = execute_cmd(current);
         if(ret < 0) exit(1);
 
