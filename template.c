@@ -544,12 +544,12 @@ error_code parse_first_line (char *line) {
     conf->ressources_count = (conf->command_count) + 4;
 
     i = n > 4 ? 1 : 0;
-    
+
     conf->file_system_cap = atoi(fields[1 + i]);
     conf->network_cap = atoi(fields[2 + i]);
     conf->system_cap = atoi(fields[3 + i]);
     conf->any_cap = atoi(fields[4 + i]);
-    
+
     return NO_ERROR;
 }
 
@@ -679,7 +679,7 @@ error_code create_command_chain(const char *line, command_head **result) {
         free(l);
         return -1;
     }
-    
+
     // initialize command chain head
     cmd_head = malloc(sizeof(command_head));
     if (!cmd_head) {
@@ -693,7 +693,7 @@ error_code create_command_chain(const char *line, command_head **result) {
     cmd_head->command = NULL;
     cmd_head->max_resources = NULL;
     cmd_head->mutex = NULL;
-    
+
     if (HAS_ERROR(parse(tokens, cmd_head))) {
         free(cmd_head);
         free(tokens);
@@ -713,7 +713,7 @@ error_code create_command_chain(const char *line, command_head **result) {
         fprintf(stderr, "could not allocate command head's resources array\n");
         destroy_command_chain(cmd_head);
     }
-    
+
     cmd_head->mutex = malloc(sizeof(pthread_mutex_t));
     if(!cmd_head->mutex){
         fprintf(stderr, "could not allocate command head's mutex\n");
@@ -801,7 +801,7 @@ banker_customer *register_command(command_head *head) {
         // get last elem
         while(current->next)
             current = current->next;
-        
+
         // add the new one
         current->next = malloc(sizeof(banker_customer));
         if(!current->next){
@@ -963,11 +963,11 @@ void call_bankers(banker_customer *customer) {
     int n;
     banker_customer *current;
     command *c;
-    
+
     // 1. wait for mutex
     pthread_mutex_lock(available_mutex);
     printf("acquired available mutex\n");
-    
+
     n = (int)(conf->ressources_count);
     current = first;
     c = customer->head->command;
@@ -990,7 +990,7 @@ void call_bankers(banker_customer *customer) {
     finish[i] = -1;// end flag
 
     // updating available table
-    
+
     // 1. get command at depth
     for(i = 0; i < customer->depth; i++) {
         if (c->next) {
@@ -1004,7 +1004,7 @@ void call_bankers(banker_customer *customer) {
     for (i = 0; i < n; i++) {
         _available[i] -= c->ressources[i];
     }
-    
+
     // copy available to work
     work = malloc(sizeof(int) * n);
     if (!work) {
@@ -1062,7 +1062,7 @@ void *banker_thread_run() {
                 call_bankers(current);
                 break;
             }
-            
+
             pthread_mutex_unlock(current->head->mutex);
             current = current->next;
         }
@@ -1149,7 +1149,7 @@ void *command_handler(void *arg){
                 if (ret) {
                     next = next->next;
                     depth++;
-                    
+
                     while (next && (next->op == OR || next->op == NONE)) {
                         next = next->next;
                         depth++;
@@ -1182,13 +1182,13 @@ void *command_handler(void *arg){
 error_code init_shell() {
     char *line;
     int i;
-    
+
     available_mutex = malloc(sizeof(pthread_mutex_t));
     if (!available_mutex) {
         fprintf(stderr, "could not init available_mutex\n");
         return -1;
     }
-    
+
     register_mutex = malloc(sizeof(pthread_mutex_t));
     if (!register_mutex) {
         free(available_mutex);
@@ -1206,7 +1206,7 @@ error_code init_shell() {
 
     // line is no longer needed
     free(line);
-    
+
     // init _available begin
     pthread_mutex_lock(available_mutex);
 
@@ -1221,7 +1221,7 @@ error_code init_shell() {
     }
 
     pthread_mutex_unlock(available_mutex);
-    // init _available end 
+    // init _available end
 
     return NO_ERROR;
 }
@@ -1235,7 +1235,7 @@ tlist *thread_list = NULL;
  */
 void close_shell() {
     free_configuration();
-    
+
     free(available_mutex);
     free(register_mutex);
     free(_available);
@@ -1262,7 +1262,7 @@ void run_shell() {
 
     pthread_attr_init(&attr);
     pthread_create(&banker_thread, &attr, banker_thread_caller, NULL);
-    
+
     while (true) {
         line = readLine();
         if (!line) {
