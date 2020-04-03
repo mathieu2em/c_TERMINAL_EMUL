@@ -191,7 +191,7 @@ void destroy_command_chain (command_head *head) {
         pthread_mutex_lock(head->mutex);
         free(head->mutex);
     }
-    
+
     if (head->command)
         free_command_list(head->command);
 
