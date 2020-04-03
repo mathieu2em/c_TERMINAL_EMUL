@@ -559,7 +559,6 @@ error_code parse_first_line (char *line) {
             }
             conf->commands[i] = ++c; // register next command
             conf->command_count = i+1; // register array size
-            conf->ressources_count = (conf->command_count) + 4;
 
             conf->command_caps = malloc(sizeof(int) * i);
             if (!conf->command_caps) {
@@ -587,6 +586,10 @@ error_code parse_first_line (char *line) {
         conf->commands[0] = "";
         conf->command_count = 0;
     }
+
+    conf->ressources_count = (conf->command_count) + 4;
+    printf("%d\n", conf->ressources_count);
+
 
     if(n>4){
         conf->file_system_cap = atoi(fields[2]);
@@ -977,6 +980,7 @@ void call_bankers(banker_customer *customer) {
 
     // 1. wait for mutex
     pthread_mutex_lock(available_mutex);
+    printf("acquire mut in call_bankers\n");
 
     int *work;
     int *finish;
@@ -1090,7 +1094,7 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
     customer->depth = cmd_depth;
     // on peut debarrer
     pthread_mutex_unlock(register_mutex);
-    pthread_mutex_unlock(mut);
+        pthread_mutex_unlock(mut);
     return NO_ERROR;
 }
 
@@ -1114,6 +1118,9 @@ void *command_handler(void *arg){
 
         if(HAS_ERROR(request_resource(c, depth_value++))) exit(1);
 
+        pthread_mutex_lock(c->head->mutex);
+        c->depth = -1;
+        pthread_mutex_unlock(c->head->mutex);
         ret = execute_cmd(current);
         if(ret < 0) exit(1);
 
@@ -1185,6 +1192,8 @@ error_code init_shell() {
     for(i = 0; i < (int)(conf->ressources_count); i++){
         _available[i] = resource_count(i);
     }
+
+    pthread_mutex_unlock(available_mutex);
 
     free(line);
 
