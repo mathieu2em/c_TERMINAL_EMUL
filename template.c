@@ -187,14 +187,16 @@ void free_configuration () {
 }
 
 void destroy_command_chain (command_head *head) {
+    if (head->mutex) {
+        pthread_mutex_lock(head->mutex);
+        free(head->mutex);
+    }
+    
     if (head->command)
         free_command_list(head->command);
 
     if (head->max_resources)
         free(head->max_resources);
-
-    if (head->mutex)
-        free(head->mutex);
 }
 
 tlist *make_tlist_node (tlist *next) {
@@ -848,16 +850,16 @@ error_code unregister_command(banker_customer *customer) {
     pthread_mutex_lock(register_mutex);
 
     // on verifie si cest first
-    if(customer == first){
+    if (customer == first) {
         // si c'est le cas on assigne first au suivant
         first = customer->next;
     }
 
-    if(customer->prev){
+    if (customer->prev) {
         customer->prev->next = customer->next;
     }
 
-    if(customer->next){
+    if (customer->next) {
         customer->next->prev = customer->prev;
     }
 
@@ -1135,7 +1137,6 @@ void *command_handler(void *arg){
         depth++;
 
         switch (op) {
-
             case BIDON: case NONE:
                 goto done;
 
