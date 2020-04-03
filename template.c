@@ -584,12 +584,11 @@ error_code parse_first_line (char *line) {
         }
     } else {
         conf->commands[0] = "";
+        conf->command_caps = NULL;
         conf->command_count = 0;
     }
 
     conf->ressources_count = (conf->command_count) + 4;
-    printf("%d\n", conf->ressources_count);
-
 
     if(n>4){
         conf->file_system_cap = atoi(fields[2]);
@@ -773,7 +772,7 @@ error_code create_command_chain(const char *line, command_head **result) {
  */
 error_code count_ressources(command_head *head, command *command_block) {
     // allocated according to number of ressources configured in first line
-    command_block->ressources = malloc(sizeof(int)*conf->command_count+4);
+    command_block->ressources = malloc(sizeof(int)*conf->ressources_count);
     command_block->ressources[resource_no(command_block->call[0])]=command_block->count;
     // here we must compute maximum concurent resources before iterating
     head->max_resources[resource_no(command_block->call[0])] += command_block->count;
@@ -872,7 +871,8 @@ error_code unregister_command(banker_customer *customer) {
     int i;
     int n = conf->ressources_count;
 
-    printf("unregister command\n");
+    printf("unregister command...\n");
+
     // on verifie si cest first
     if(customer == first){
         // si c'est le cas on assigne first au suivant
@@ -898,6 +898,7 @@ error_code unregister_command(banker_customer *customer) {
     destroy_command_chain(customer->head);
     free(customer);
 
+    printf("command unregistered\n");
     return NO_ERROR;
 }
 
@@ -979,10 +980,9 @@ bool all_good(int *finish){
  * @param customer
  */
 void call_bankers(banker_customer *customer) {
-
+    printf("acquire availible mutex\n");
     // 1. wait for mutex
     pthread_mutex_lock(available_mutex);
-    printf("acquire mut in call_bankers\n");
 
     int *work;
     int *finish;
@@ -1036,6 +1036,8 @@ void call_bankers(banker_customer *customer) {
         for(i = 0; i < n; i++){
             customer->current_resources[i] += c->ressources[i];
         }
+        current->depth = -1;
+        pthread_mutex_unlock(current->head->mutex);
     }
 
     // liberate the mutex
@@ -1060,14 +1062,13 @@ void *banker_thread_run() {
         while(current){
             // 3. En trouver un dont le depth n'est pas -1
             // ( si on n'en trouve pas, mutex unlock et passe a prochain tour de boucle)
-            pthread_mutex_lock(current->head->mutex);
             if(current->depth >= 0){
                 // 4. Appelle call_bankers sur ce client
+                pthread_mutex_lock(current->head->mutex);
+                printf("call_bankers...\n");
                 call_bankers(current);
-                pthread_mutex_unlock(current->head->mutex);
                 break;
             }
-            pthread_mutex_unlock(current->head->mutex);
             current=current->next;
         }
         // 5. deverouiller le mutex d'enregistrement
@@ -1091,16 +1092,13 @@ void *banker_thread_run() {
 error_code request_resource(banker_customer *customer, int cmd_depth) {
     pthread_mutex_t *mut = customer->head->mutex;
 
-    pthread_mutex_lock(register_mutex);
-    printf("got first mutex\n");
-
     pthread_mutex_lock(mut);
-    printf("got second mutex\n");
-
     customer->depth = cmd_depth;
-
     pthread_mutex_unlock(mut);
-    pthread_mutex_unlock(register_mutex);
+
+    
+    pthread_mutex_lock(mut);
+    pthread_mutex_unlock(mut);
 
     return NO_ERROR;
 }
@@ -1117,6 +1115,7 @@ void *command_handler(void *arg){
     depth_value = 0;
     current = c->head->command;
 
+    printf("reached after current init in handler\n");
     // faire une boucle qui va faire appel a request ressource pour chaque bloc individuel
     // apres ca a call execute command
     // dependamment de cque exec command retourne et du type dla commande
@@ -1125,10 +1124,6 @@ void *command_handler(void *arg){
 
         if(HAS_ERROR(request_resource(c, depth_value++))) exit(1);
 
-        pthread_mutex_lock(c->head->mutex);
-        c->depth = -1;
-        pthread_mutex_unlock(c->head->mutex);
-        
         ret = execute_cmd(current);
         if(ret < 0) exit(1);
 
