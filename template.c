@@ -262,12 +262,6 @@ char* readLine (void) {
             return NULL;
     }
 
-    // should not exit before "exit"
-    // if (n == 0) {
-    //     free(line);
-    //     close_shell();
-    // }
-
     line[n] = '\0'; /* null terminate string */
 
     return line;
@@ -869,6 +863,7 @@ error_code unregister_command(banker_customer *customer) {
         _available[i] += customer->current_resources[i];
     }
     pthread_mutex_unlock(available_mutex);
+    
     // liberation de la memoire
     free(customer->current_resources);
     destroy_command_chain(customer->head);
@@ -1056,7 +1051,7 @@ void *banker_thread_run() {
         //printf("banker_thread...\n");
         while (current) {
             // 3. En trouver un dont le depth n'est pas -1
-            pthread_mutex_lock(current->head->mutex);
+            pthread_mutex_trylock(current->head->mutex);
             //printf("got customer's mutex\n");
             if (current->depth >= 0) {
                 // 4. Appelle call_bankers sur ce client
@@ -1096,14 +1091,16 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
 
     //let banker_thread_lock mutex
     pthread_mutex_lock(register_mutex);
-    pthread_mutex_unlock(register_mutex);
 
     // wait for autorisation
     printf("waiting for autorisation...\n");
     pthread_mutex_lock(customer->head->mutex);
+    printf("receiving anwser...\n");
     ret = customer->depth < 0 ? NO_ERROR : -1;
     customer->depth = -1;
     pthread_mutex_unlock(customer->head->mutex);
+    
+    pthread_mutex_unlock(register_mutex);
 
     return ret;
 }
