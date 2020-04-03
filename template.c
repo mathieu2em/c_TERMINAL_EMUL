@@ -727,8 +727,6 @@ error_code create_command_chain(const char *line, command_head **result) {
     tokens = tokenize(l, " \t");
     // initialize command chain head
     cmd_head = malloc(sizeof(command_head));
-    // store max_resources_count future size (will be added in evaluate_whole_chain)
-    cmd_head->max_resources_count=conf->ressources_count;
 
     if (!cmd_head) {
         fprintf(stderr, "could not allocate command chain header\n");
@@ -736,6 +734,8 @@ error_code create_command_chain(const char *line, command_head **result) {
         free(l);
         return -1;
     }
+    // store max_resources_count future size (will be added in evaluate_whole_chain)
+    cmd_head->max_resources_count = conf->ressources_count;
 
     if (HAS_ERROR(parse(tokens, cmd_head))) {
         free(cmd_head);
@@ -867,6 +867,7 @@ error_code unregister_command(banker_customer *customer) {
     int i;
     int n = conf->ressources_count;
 
+    printf("unregister command\n");
     // on verifie si cest first
     if(customer == first){
         // si c'est le cas on assigne first au suivant
@@ -881,12 +882,12 @@ error_code unregister_command(banker_customer *customer) {
         customer->next->prev = customer->prev;
     }
 
-    if(pthread_mutex_lock(available_mutex)) return -1;
+    pthread_mutex_lock(available_mutex);
     // liberer les ressources
     for(i = 0; i < n; i++){
         _available[i] += customer->current_resources[i];
     }
-    if(pthread_mutex_unlock(available_mutex)) return -1;
+    pthread_mutex_unlock(available_mutex);
     // liberation de la memoire
     free(customer->current_resources);
     destroy_command_chain(customer->head);
@@ -975,7 +976,7 @@ bool all_good(int *finish){
 void call_bankers(banker_customer *customer) {
 
     // 1. wait for mutex
-    if(pthread_mutex_lock(available_mutex)) exit(1);
+    pthread_mutex_lock(available_mutex);
 
     int *work;
     int *finish;
@@ -1032,7 +1033,7 @@ void call_bankers(banker_customer *customer) {
     }
 
     // liberate the mutex
-    if(pthread_mutex_unlock(available_mutex)) exit(1);
+    pthread_mutex_unlock(available_mutex);
 }
 
 /**
@@ -1080,14 +1081,16 @@ void *banker_thread_run() {
 error_code request_resource(banker_customer *customer, int cmd_depth) {
     pthread_mutex_t *mut = customer->head->mutex;
     // lock le mutex de head pour faire ses shit yo
-    if(pthread_mutex_lock(mut)) return -1;
+    pthread_mutex_lock(mut);
+    printf("got first mutex\n");
     // attend que le banquier finisse ses shit
-    if(pthread_mutex_lock(register_mutex)) return -1;
+    pthread_mutex_lock(register_mutex);
+    printf("got second mutex\n");
     // changer le depth a la position d'execution de la ligne ou on est rendu
     customer->depth = cmd_depth;
     // on peut debarrer
-    if(pthread_mutex_unlock(register_mutex)) return -1;
-    if(pthread_mutex_unlock(mut)) return -1;
+    pthread_mutex_unlock(register_mutex);
+    pthread_mutex_unlock(mut);
     return NO_ERROR;
 }
 
@@ -1099,6 +1102,7 @@ void *command_handler(void *arg){
     operator op;
     banker_customer *c = (banker_customer *)arg;
 
+    printf("command handler begin\n");
     depth_value = 0;
     current = c->head->command;
 
@@ -1146,7 +1150,6 @@ void *command_handler(void *arg){
     }
     done:
     unregister_command(c);
-
     // TODO destroy command pi toute plein de shits
     return 0;
 }
@@ -1173,18 +1176,14 @@ error_code init_shell() {
         fprintf(stderr, " AAAAAAAH\n");
         return -1;
     }
-    if(pthread_mutex_lock(available_mutex)) return -1;
+    pthread_mutex_lock(available_mutex);
 
     // set available ressources to the right thing yeah
     _available = malloc(sizeof(int)*conf->ressources_count);
     if(!_available) return -1;
 
-    _available[FS_CMD_TYPE] = conf->file_system_cap;
-    _available[NET_CMD_TYPE] = conf->network_cap;
-    _available[SYS_CMD_TYPE] = conf->system_cap;
-    _available[MISC_CMD_TYPE] = conf->any_cap;
-    for(i = 0; i < (int)(conf->command_count); i++){
-        _available[i + 4] = conf->command_caps[i];
+    for(i = 0; i < (int)(conf->ressources_count); i++){
+        _available[i] = resource_count(i);
     }
 
     free(line);
@@ -1230,9 +1229,9 @@ void run_shell() {
     banker_customer *customer;
     pthread_t banker_thread;
 
+    printf("run shell\n");
     pthread_attr_init(&attr);
     pthread_create(&banker_thread, &attr, banker_thread_caller, NULL);
-
     while (1) {
         line = readLine();
         if (!line)
@@ -1252,6 +1251,8 @@ void run_shell() {
             free(cmd_head);
             exit(1); // TODO ptetre qui faut pas exit jsais pas
         }
+
+        printf("bfr bckgrnd\n");
 
         if (cmd_head->background) {
             thread_list = make_tlist_node(thread_list);
