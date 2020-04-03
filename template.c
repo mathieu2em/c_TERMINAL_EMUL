@@ -436,6 +436,9 @@ error_code execute (command *cmd) {
 
     if (!cmd || !cmd->call)
         return 0;
+    //TODO request resource icitte
+    // vu que request resource va juste retourner une valeur met que le banquier dise ok
+    // ca bloque en attendant yeah
 
     ret = execute_cmd(cmd);
     if (ret < 0)
@@ -563,7 +566,7 @@ error_code parse_first_line (char *line) {
             }
         }
 
-        for (i = 0; i < conf->command_count; i++) {
+        for (i = 0; i < (int)(conf->command_count); i++) {
             c = strtok(i == 0 ? fields[1] : NULL, ",");
             if (!c) {
                 fprintf(stderr, "invalid first line syntax: "
@@ -649,7 +652,7 @@ error_code resource_no (char *res_name) {
     int i;
 
     /* dynamic category */
-    for(i = 0; i < conf->command_count; i++)
+    for(i = 0; i < (int)(conf->command_count); i++)
         if(strcmp(res_name,conf->commands[i]) == 0)
             return i+4;
 
@@ -691,7 +694,7 @@ int resource_count (int resource_no) {
         case MISC_CMD_TYPE:
             return conf->any_cap;
         default:
-            if (resource_no - 4 < conf->command_count)
+            if (resource_no - 4 < (int)(conf->command_count))
                 return conf->command_caps[resource_no - 4];
             else
                 return -1;
@@ -758,7 +761,10 @@ error_code create_command_chain(const char *line, command_head **result) {
 error_code count_ressources(command_head *head, command *command_block) {
     // allocated according to number of ressources configured in first line
     command_block->ressources = malloc(sizeof(int)*conf->command_count+4);
-    command_block->ressources[resource_no(*command_block->call)]=command_block->count;
+    command_block->ressources[resource_no(command_block->call[0])]=command_block->count;
+    // here we must compute maximum concurent resources before iterating
+    head->max_resources[resource_no(command_block->call[0])] += command_block->count;
+
     return NO_ERROR;
 }
 
@@ -778,10 +784,6 @@ error_code evaluate_whole_chain(command_head *head) {
             free_command_list(head->command);
             return -1;
         }
-
-        // here we must compute maximum concurent resources before iterating
-        head->max_resources[resource_no(*current->call)] += current->count;
-
         current = current->next;
     }
 
@@ -1078,6 +1080,67 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
     return NO_ERROR;
 }
 
+// cette fonction va avoir une loop qui va call request ressources pour tt la commande
+void *command_handler(void *arg){
+    command *current, *next;
+    int depth_value;
+    long ret;
+    operator op;
+    banker_customer *c = (banker_customer *)arg;
+
+    depth_value = 0;
+    current = c->head->command;
+
+    // faire une boucle qui va faire appel a request ressource pour chaque bloc individuel
+    // apres ca a call execute command
+    // dependamment de cque exec command retourne et du type dla commande
+    // ca setup les shit pour la prochaine iteration de la boucle
+    while(current && current->call){ // TODO on checkera si le deuxieme cond est necessaire lol
+
+        if(HAS_ERROR(request_resource(c, depth_value++))) exit(1);
+
+        ret = execute_cmd(current);
+        if(ret < 0) exit(1);
+
+        op = current->op;
+        next = current->next;
+
+        switch (op) {
+
+        case BIDON: case NONE:
+            goto done;
+
+        case AND:
+            if (ret)
+                break;
+            else
+                goto done;
+
+        case OR:
+            if (ret) {
+                next = next->next;
+
+                while (next && (next->op == OR || next->op == NONE))
+                    next = next->next;
+
+                if (next && next->op == AND)
+                    next = next->next;
+            }
+            break;
+
+        default:
+            goto done;
+        }
+        current = next;
+    }
+done:
+    unregister_command(c);
+
+    // TODO destroy command pi toute plein de shits
+    return 0;
+}
+
+
 /**
  * Utilisez cette fonction pour initialiser votre shell
  * Cette fonction est appelée uniquement au début de l'exécution
@@ -1143,12 +1206,11 @@ void close_shell() {
  */
 void run_shell() {
     char *line, **tokens;
-    command *c;
     command_head *cmd_head;
-    int ret = 0;
     // pid_t pid;
     tlist *thread_list = NULL;
     pthread_attr_t attr;
+    banker_customer *customer;
     pthread_attr_init(&attr);
     while (1) {
         line = readLine();
@@ -1180,21 +1242,24 @@ void run_shell() {
         free(tokens);
         free(line);
 
-        if (cmd_head->background) {
-            thread_list = make_tlist_node(thread_list);
-            pthread_create(&(thread_list->t), &attr, execute_background, cmd_head);
-        } else {
-            execute(cmd_head->command);
-
-            // free used memory TODO modify
+        customer = register_command(cmd_head);
+        if(!customer){
+            fprintf(stderr, "dafuck bruh\n");
             free_command_list(cmd_head->command);
             free(cmd_head);
+            exit(1); // TODO ptetre qui faut pas exit jsais pas
+        }
+
+        if (cmd_head->background) {
+            thread_list = make_tlist_node(thread_list);
+            pthread_create(&(thread_list->t), &attr, command_handler, customer);
+        } else {
+            command_handler(customer);
         }
     }
     pthread_attr_destroy(&attr);
     free_tlist(thread_list);
 }
-
 
 /****************************************************
  * WARNING THIS VERSION OF main IS FOR TESTING ONLY *
