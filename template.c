@@ -371,7 +371,7 @@ error_code parse (char **tokens, command_head *cmd_head) {
                     if (cp = strchr(tokens[i], ')')) {
                         *cp = '\0';
                         rnfn = false;
-                        op = NONE;
+                        op = BIDON;
                     }
                 }
                 /* j = i;*/
@@ -1030,7 +1030,7 @@ void call_bankers(banker_customer *customer) {
 
         current->depth = -1; // grant request
         pthread_mutex_unlock(current->head->mutex);
-        //printf("released customer's mutex\n");
+        printf("released customer's mutex\n");
     } else {
         // otherwise reset _available to original state
         for(i = 0; i < n; i++){
@@ -1051,6 +1051,7 @@ void call_bankers(banker_customer *customer) {
  */
 void *banker_thread_run() {
     banker_customer *current;
+
     // execute sans fin
     while(true){
         // 1. Acquerir le mutex d'enregistrement
@@ -1060,11 +1061,12 @@ void *banker_thread_run() {
         //printf("banker_thread...\n");
         while (current) {
             // 3. En trouver un dont le depth n'est pas -1
-            pthread_mutex_trylock(current->head->mutex);
+            pthread_mutex_lock(current->head->mutex);
+            
             //printf("got customer's mutex\n");
             if (current->depth >= 0) {
                 // 4. Appelle call_bankers sur ce client
-                //printf("call_bankers...\n");
+                printf("call_bankers...\n");
                 call_bankers(current);
                 break;
             }
@@ -1100,11 +1102,10 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
     pthread_mutex_lock(register_mutex);
     customer->depth = cmd_depth;
     pthread_mutex_unlock(register_mutex);
+    // restart banker_thread_run loop
 
-    //let banker_thread lock mutex
-    //pthread_mutex_lock(register_mutex);
-    //sleep(1);
-    //pthread_mutex_unlock(register_mutex);
+    // let banker lock mutex
+    
     // wait for autorisation
     //printf("waiting for autorisation...\n");
     printf("waiting for '%s %s' (bg : %s)...\n",
@@ -1118,14 +1119,8 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
            customer->head->command->call_size > 1 ? customer->head->command->call[1] : "",
            customer->head->background ? "true" : "false");
     pthread_mutex_unlock(customer->head->mutex);
-<<<<<<< HEAD
-
+    
     return NO_ERROR;
-=======
-    //pthread_mutex_unlock(register_mutex);
-
-    return ret;
->>>>>>> 19757b2ae1968f3558e1f6739a728e97f0c320bb
 }
 
 // cette fonction va avoir une loop qui va call request ressources pour tt la commande
