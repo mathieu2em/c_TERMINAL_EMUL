@@ -466,9 +466,9 @@ error_code execute (command *cmd) {
     }
 }
 
-error_code execute_background (command_head *head) {
-    int ret;
-    ret = execute(head->command);
+void *execute_background (void *arg) {
+    command_head *head = (command_head *)arg;
+    long ret = execute(head->command);
 
     // free used memory
     free_command_list(head->command);
@@ -476,7 +476,7 @@ error_code execute_background (command_head *head) {
 
     if (ret < 0)
         exit(1);
-    return ret;
+    return (void *)ret; // TODO not sure
 }
 
 /**
@@ -1084,7 +1084,6 @@ error_code request_resource(banker_customer *customer, int cmd_depth) {
  * des tests (et de votre programme).
  */
 error_code init_shell() {
-    error_code err;
     char *line;
     int i;
 
@@ -1184,23 +1183,6 @@ void run_shell() {
         if (cmd_head->background) {
             thread_list = make_tlist_node(thread_list);
             pthread_create(&(thread_list->t), &attr, execute_background, cmd_head);
-
-            /*
-            // fork for background command
-            pid = fork();
-
-            // execute command in child process
-            if (pid == 0)
-                ret = execute(cmd_head->command);
-
-            // free used memory
-            free_command_list(cmd_head->command);
-            free(cmd_head);
-
-            // exit with 1 if fork or exec failed
-            if (pid < 0 || ret < 0)
-                exit(1);
-            */
         } else {
             execute(cmd_head->command);
 
