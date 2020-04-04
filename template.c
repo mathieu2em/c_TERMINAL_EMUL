@@ -104,6 +104,7 @@ const char* syntax_error_fmt = "bash: syntax error near unexpected token `%s'\n"
 
 // Configuration globale
 configuration *conf = NULL;
+bool running = false;
 
 int insert_char (char *str, int pos, char c, int len)
 {
@@ -1116,7 +1117,7 @@ void *banker_thread_run() {
     banker_customer *current;
 
     // execute sans fin
-    while (true) {
+    while (running) {
         // 1. Acquerir le mutex d'enregistrement
         pthread_mutex_lock(register_mutex);
         // 2. Parcourir tous les clients enregistres
@@ -1285,6 +1286,7 @@ error_code init_shell() {
     pthread_mutex_unlock(available_mutex);
     // init _available end
 
+    running = true;
     return NO_ERROR;
 }
 
@@ -1342,6 +1344,9 @@ void run_shell() {
 
         if (strcmp(line, "exit") == 0) {
             free(line);
+            pthread_mutex_lock(register_mutex);
+            running = false;
+            pthread_mutex_unlock(register_mutex);
             break;
         }
 
@@ -1371,8 +1376,6 @@ void run_shell() {
             command_handler(customer);
         }
     }
-    while (pthread_cancel(*banker_thread))
-        ;
     pthread_join(*banker_thread, NULL);
     free(banker_thread);
 }
