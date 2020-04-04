@@ -371,7 +371,6 @@ error_code parse (char **tokens, command_head *cmd_head) {
                     if (cp = strchr(tokens[i], ')')) {
                         *cp = '\0';
                         rnfn = false;
-                        op = BIDON;
                     }
                 }
                 /* j = i;*/
@@ -379,7 +378,8 @@ error_code parse (char **tokens, command_head *cmd_head) {
                 fprintf(stderr, syntax_error_fmt, tokens[i]);
                 goto parse_error;
             }
-        } else if (op != ALSO && !tokens[i+1]) {
+        }
+        if (op != ALSO && !tokens[i+1]) {
             op = NONE;
         }
 
@@ -1279,7 +1279,7 @@ void run_shell() {
     pthread_create(&banker_thread, &attr, banker_thread_caller, NULL);
 
     printf("welcome to shell...\n");
-    
+
     while (true) {
         line = readLine();
         if (!line) {
