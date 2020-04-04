@@ -861,8 +861,6 @@ error_code unregister_command(banker_customer *customer) {
     int i;
     int n = conf->ressources_count;
 
-    //printf("unregister command...\n");
-
     pthread_mutex_lock(register_mutex);
 
     // on verifie si cest first
@@ -893,7 +891,6 @@ error_code unregister_command(banker_customer *customer) {
 
     pthread_mutex_unlock(register_mutex);
 
-    //printf("command unregistered\n");
     return NO_ERROR;
 }
 
@@ -1088,7 +1085,6 @@ void call_bankers(banker_customer *customer) {
 
     // is request safe?
     if (bankers(work, finish)) {
-        //printf("banker is good\n");
         // if so, update resources in customer
         for(i = 0; i < n; i++)
             customer->current_resources[i] += c->ressources[i];
@@ -1097,7 +1093,6 @@ void call_bankers(banker_customer *customer) {
         pthread_mutex_unlock(current->head->mutex);
         //printf("released customer's mutex\n");
     } else {
-        printf("banker is not good\n");
         // otherwise reset _available to original state
         for(i = 0; i < n; i++){
             _available[i] += c->ressources[i];
@@ -1109,7 +1104,6 @@ void call_bankers(banker_customer *customer) {
 
     // liberate the mutex
     pthread_mutex_unlock(available_mutex);
-    //printf("released available mutex\n");
 }
 
 /**
@@ -1137,19 +1131,6 @@ void *banker_thread_run() {
             current = current->next;
         }
 
-        /*
-        printf("list de customer\n");
-        current = first;
-        while (current) {
-            printf("'%s %s' (bg : %s) (depth: %d)...\n",
-                   current->head->command->call[0],
-                   current->head->command->call_size > 1 ? current->head->command->call[1] : "",
-                   current->head->background ? "true" : "false",
-                   current->depth);
-            current = current->next;
-        }
-        */
-        
         // 5. deverouiller le mutex d'enregistrement
         pthread_mutex_unlock(register_mutex);
     }
@@ -1169,28 +1150,12 @@ void *banker_thread_run() {
  * @return un code d'erreur
  */
 error_code request_resource(banker_customer *customer, int cmd_depth) {
-    int ret;
-
-    /*printf("request resource for '%s %s' (bg : %s)...\n",
-           customer->head->command->call[0],
-           customer->head->command->call_size > 1 ? customer->head->command->call[1] : "",
-           customer->head->background ? "true" : "false");*/
-    
     pthread_mutex_lock(customer->head->mutex);
     customer->depth = cmd_depth;
 
     // wait for autorisation
-    printf("waiting for '%s %s' (bg : %s) (depth: %d)...\n",
-           customer->head->command->call[0],
-           customer->head->command->call_size > 1 ? customer->head->command->call[1] : "",
-           customer->head->background ? "true" : "false",
-           cmd_depth);
+
     pthread_mutex_lock(customer->head->mutex);
-    printf("permission granted for '%s %s' (bg : %s) (depth: %d)...\n",
-           customer->head->command->call[0],
-           customer->head->command->call_size > 1 ? customer->head->command->call[1] : "",
-           customer->head->background ? "true" : "false",
-           cmd_depth);
     pthread_mutex_unlock(customer->head->mutex);
 
     return NO_ERROR;
@@ -1214,7 +1179,6 @@ void *command_handler(void *arg){
     while (current && current->call) { // TODO on checkera si le deuxieme cond est necessaire lol
         request_resource(c, depth);
 
-        //printf("executing '%s' (depth: %d)...\n", current->call[0], depth);
         ret = execute_cmd(current);
         if(ret < 0) exit(1);
 
@@ -1368,8 +1332,6 @@ void run_shell() {
     }
     
     pthread_create(banker_thread, NULL, banker_thread_caller, NULL);
-
-    printf("welcome to shell...\n");
 
     while (true) {
         line = readLine();
