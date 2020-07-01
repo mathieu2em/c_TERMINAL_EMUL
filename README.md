@@ -1,8 +1,8 @@
-# os-tp2
+# A C TERMINAL EMULATOR
 [X] error_code parse_first_line(char* first_line);\
 [X] unsigned int ressource_no(char* cmd);\
 [X] unsigned int ressource_count(unsigned int cmd_no);\
 [X] lot of stuff
-[ ] fewer stuff
+[X] fewer stuff
 
-[ ] drink a beer
+[X] drink a beer
